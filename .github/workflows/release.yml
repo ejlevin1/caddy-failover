@@ -156,6 +156,12 @@ jobs:
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+            GIT_TAG=v${{ steps.semantic.outputs.new_release_version }}
+            GIT_BRANCH=${{ github.ref_name }}
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+            VERSION=${{ steps.semantic.outputs.new_release_version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

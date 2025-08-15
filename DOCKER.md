@@ -86,6 +86,27 @@ image: ghcr.io/ejlevin1/caddy-failover:1.3
 image: ghcr.io/ejlevin1/caddy-failover:1
 ```
 
+## Build Information
+
+Every Docker image includes embedded build information accessible at `/etc/caddy/build-info.json`:
+
+```bash
+# View build info from a running container
+docker exec <container-name> cat /etc/caddy/build-info.json
+
+# Or inspect it directly
+docker run --rm ghcr.io/ejlevin1/caddy-failover:latest cat /etc/caddy/build-info.json
+```
+
+The build info includes:
+- `version` - Semantic version of the release
+- `git_commit` - Git commit SHA used for the build
+- `git_tag` - Git tag (if applicable)
+- `git_branch` - Git branch name
+- `build_date` - When the image was built
+- `caddy_version` - Version of Caddy server
+- `plugin` - Plugin identifier
+
 ## Build Attestations
 
 All Docker images include build attestations for supply chain security. You can verify the provenance of an image:
@@ -93,6 +114,23 @@ All Docker images include build attestations for supply chain security. You can 
 ```bash
 docker trust inspect ghcr.io/ejlevin1/caddy-failover:latest
 ```
+
+## Image Labels
+
+Docker images include OCI standard labels for better integration:
+
+```bash
+# View image labels
+docker inspect ghcr.io/ejlevin1/caddy-failover:latest | jq '.[0].Config.Labels'
+```
+
+Labels include:
+- `org.opencontainers.image.version` - Version of the software
+- `org.opencontainers.image.revision` - Git commit SHA
+- `org.opencontainers.image.created` - Build timestamp
+- `org.opencontainers.image.source` - Source code repository
+- `org.opencontainers.image.title` - Image title
+- `org.opencontainers.image.description` - Image description
 
 ## Development Builds
 

@@ -82,6 +82,45 @@ https://localhost:443 {
 - `insecure_skip_verify` - Skip TLS certificate verification
 - `header_up <upstream> <name> <value>` - Set upstream-specific headers
 
+### Path Base Support
+
+Upstreams can have different base paths. The plugin automatically preserves and combines the upstream base path with the incoming request path:
+
+```caddyfile
+:8080 {
+    handle {
+        # Request to /gateway will be proxied to:
+        # - http://test.com/gateway (no base path)
+        # - http://test2.com/path/gateway (with /path base)
+        failover_proxy http://test.com http://test2.com/path/
+    }
+}
+```
+
+### X-Forwarded-Proto Header
+
+The plugin correctly sets the `X-Forwarded-Proto` header based on the actual inbound protocol (HTTP or HTTPS), not hardcoded. It also preserves any existing `X-Forwarded-Proto` header from upstream proxies.
+
+### Debug Logging
+
+The plugin provides detailed debug logging to help troubleshoot failover behavior. To enable debug logging in Caddy, use:
+
+```bash
+# Start Caddy with debug logging
+caddy run --config Caddyfile --adapter caddyfile --environ --debug
+
+# Or set the log level in your Caddyfile
+{
+    debug
+}
+```
+
+The plugin logs:
+- Which upstream is being attempted
+- The full target URL being proxied to
+- Success/failure of each upstream attempt
+- When upstreams are skipped due to previous failures
+
 ## Examples
 
 ### IDE-First Development

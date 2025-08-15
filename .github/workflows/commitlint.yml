@@ -23,7 +23,7 @@ jobs:
       - name: Install commitlint
         run: |
           npm init -y || true
-          npm install --save-dev @commitlint/cli @commitlint/config-conventional
+          npm install --save-dev @commitlint/cli
 
       - name: Validate PR title
         if: github.event_name == 'pull_request'

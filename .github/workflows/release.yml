@@ -10,6 +10,8 @@ permissions:
   issues: write
   pull-requests: write
   packages: write
+  attestations: write
+  id-token: write
 
 jobs:
   release:
@@ -120,15 +122,53 @@ jobs:
             ./dist/*.zip
           token: ${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}
 
+      - name: Set up Docker Buildx
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        if: steps.semantic.outputs.new_release_published == 'true'
+        id: docker_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/ejlevin1/caddy-failover
+          tags: |
+            type=semver,pattern={{version}},value=v${{ steps.semantic.outputs.new_release_version }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ steps.semantic.outputs.new_release_version }}
+            type=semver,pattern={{major}},value=v${{ steps.semantic.outputs.new_release_version }}
+            type=raw,value=latest
+
       - name: Build and push Docker image
         if: steps.semantic.outputs.new_release_published == 'true'
-        run: |
-          VERSION=${{ steps.semantic.outputs.new_release_version }}
+        id: docker_build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+            GIT_TAG=v${{ steps.semantic.outputs.new_release_version }}
+            GIT_BRANCH=${{ github.ref_name }}
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+            VERSION=${{ steps.semantic.outputs.new_release_version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-          docker build -t ghcr.io/ejlevin1/caddy-failover:${VERSION} .
-          docker tag ghcr.io/ejlevin1/caddy-failover:${VERSION} ghcr.io/ejlevin1/caddy-failover:latest
-
-          docker push ghcr.io/ejlevin1/caddy-failover:${VERSION}
-          docker push ghcr.io/ejlevin1/caddy-failover:latest
+      - name: Generate Docker image attestation
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ghcr.io/ejlevin1/caddy-failover
+          subject-digest: ${{ steps.docker_build.outputs.digest }}
+          push-to-registry: true

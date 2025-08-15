@@ -297,6 +297,9 @@ docker run -d \
 
 Monitor the health and status of all failover proxies via REST API:
 
+**Important**: The `failover_status` directive requires proper ordering. Choose one of these approaches:
+
+**Option 1: Use global order directive (recommended)**
 ```caddyfile
 {
     order failover_proxy before reverse_proxy
@@ -318,6 +321,16 @@ Monitor the health and status of all failover proxies via REST API:
                 interval 30s
             }
         }
+    }
+}
+```
+
+**Option 2: Use route instead of handle (no order directive needed)**
+```caddyfile
+:443 {
+    # Status endpoint using route (doesn't require ordering)
+    route /admin/failover/status {
+        failover_status
     }
 }
 ```

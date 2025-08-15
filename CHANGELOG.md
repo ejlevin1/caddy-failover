@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/ejlevin1/caddy-failover/compare/v1.2.0...v1.3.0) (2025-08-15)
+
+
+### Features
+
+* add environment variable expansion support ([ca1a80c](https://github.com/ejlevin1/caddy-failover/commit/ca1a80c31bd8b8132b9a9cd5b7ac02a6bfc40405))
+
 # [1.2.0](https://github.com/ejlevin1/caddy-failover/compare/v1.1.0...v1.2.0) (2025-08-15)
 
 

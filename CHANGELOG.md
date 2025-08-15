@@ -1,3 +1,10 @@
+## [1.0.3](https://github.com/ejlevin1/caddy-failover/compare/v1.0.2...v1.0.3) (2025-08-15)
+
+
+### Bug Fixes
+
+* update integration test to work with main branch behavior ([81927f8](https://github.com/ejlevin1/caddy-failover/commit/81927f873375f0b5b9632d3665bd9904a6221357))
+
 ## [1.0.2](https://github.com/ejlevin1/caddy-failover/compare/v1.0.1...v1.0.2) (2025-08-15)
 
 

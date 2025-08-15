@@ -1,7 +1,9 @@
 package caddyfailover
 
 import (
+	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -20,7 +22,95 @@ import (
 
 func init() {
 	caddy.RegisterModule(&FailoverProxy{})
+	caddy.RegisterModule(&FailoverStatusHandler{})
 	httpcaddyfile.RegisterHandlerDirective("failover_proxy", parseFailoverProxy)
+	httpcaddyfile.RegisterHandlerDirective("failover_status", parseFailoverStatus)
+}
+
+var (
+	// Global registry to track all failover proxy instances
+	proxyRegistry = &ProxyRegistry{
+		proxies: make(map[string][]*FailoverProxy),
+	}
+)
+
+// ProxyRegistry tracks all failover proxy instances for status reporting
+type ProxyRegistry struct {
+	mu      sync.RWMutex
+	proxies map[string][]*FailoverProxy // path -> proxies
+}
+
+// Register adds a proxy to the registry
+func (r *ProxyRegistry) Register(path string, proxy *FailoverProxy) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.proxies[path] = append(r.proxies[path], proxy)
+}
+
+// Unregister removes a proxy from the registry
+func (r *ProxyRegistry) Unregister(path string, proxy *FailoverProxy) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	proxies := r.proxies[path]
+	for i, p := range proxies {
+		if p == proxy {
+			r.proxies[path] = append(proxies[:i], proxies[i+1:]...)
+			if len(r.proxies[path]) == 0 {
+				delete(r.proxies, path)
+			}
+			break
+		}
+	}
+}
+
+// GetStatus returns the status of all registered proxies
+func (r *ProxyRegistry) GetStatus() []PathStatus {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var status []PathStatus
+	for path, proxies := range r.proxies {
+		ps := PathStatus{
+			Path:            path,
+			FailoverProxies: []UpstreamStatus{},
+		}
+		for _, proxy := range proxies {
+			ps.FailoverProxies = append(ps.FailoverProxies, proxy.GetUpstreamStatus()...)
+		}
+		status = append(status, ps)
+	}
+	return status
+}
+
+// PathStatus represents the status of failover proxies for a path
+type PathStatus struct {
+	Path            string           `json:"path"`
+	FailoverProxies []UpstreamStatus `json:"failover_proxies"`
+}
+
+// UpstreamStatus represents the status of a single upstream
+type UpstreamStatus struct {
+	Host         string    `json:"host"`
+	Status       string    `json:"status"` // UP, DOWN, UNHEALTHY
+	LastCheck    time.Time `json:"last_check,omitempty"`
+	LastFailure  time.Time `json:"last_failure,omitempty"`
+	HealthCheck  bool      `json:"health_check_enabled"`
+	ResponseTime int64     `json:"response_time_ms,omitempty"`
+}
+
+// HealthCheck defines health check configuration for an upstream
+type HealthCheck struct {
+	// Path is the health check endpoint path
+	Path string `json:"path,omitempty"`
+
+	// Interval is how often to perform health checks (default 30s)
+	Interval caddy.Duration `json:"interval,omitempty"`
+
+	// Timeout is the timeout for health check requests (default 5s)
+	Timeout caddy.Duration `json:"timeout,omitempty"`
+
+	// ExpectedStatus is the expected HTTP status code (default 200)
+	ExpectedStatus int `json:"expected_status,omitempty"`
 }
 
 // FailoverProxy is a Caddy HTTP handler that tries multiple upstream servers
@@ -31,6 +121,9 @@ type FailoverProxy struct {
 
 	// UpstreamHeaders is a map of upstream URL to headers
 	UpstreamHeaders map[string]map[string]string `json:"upstream_headers,omitempty"`
+
+	// HealthChecks is a map of upstream URL to health check configuration
+	HealthChecks map[string]*HealthCheck `json:"health_checks,omitempty"`
 
 	// InsecureSkipVerify allows skipping TLS verification for HTTPS upstreams
 	InsecureSkipVerify bool `json:"insecure_skip_verify,omitempty"`
@@ -44,11 +137,19 @@ type FailoverProxy struct {
 	// ResponseTimeout is the timeout for receiving response (default 5s)
 	ResponseTimeout caddy.Duration `json:"response_timeout,omitempty"`
 
-	logger       *zap.Logger
-	httpClient   *http.Client
-	httpsClient  *http.Client
-	failureCache map[string]time.Time
-	mu           sync.RWMutex
+	// Path is the route path this proxy handles (for status reporting)
+	Path string `json:"path,omitempty"`
+
+	logger        *zap.Logger
+	httpClient    *http.Client
+	httpsClient   *http.Client
+	failureCache  map[string]time.Time
+	healthStatus  map[string]bool // true = healthy, false = unhealthy
+	lastCheckTime map[string]time.Time
+	responseTime  map[string]int64 // response time in milliseconds
+	mu            sync.RWMutex
+	shutdown      chan struct{}
+	wg            sync.WaitGroup
 }
 
 // CaddyModule returns the Caddy module information
@@ -63,6 +164,15 @@ func (*FailoverProxy) CaddyModule() caddy.ModuleInfo {
 func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 	f.logger = ctx.Logger(f)
 	f.failureCache = make(map[string]time.Time)
+	f.healthStatus = make(map[string]bool)
+	f.lastCheckTime = make(map[string]time.Time)
+	f.responseTime = make(map[string]int64)
+	f.shutdown = make(chan struct{})
+
+	// Register with global registry
+	if f.Path != "" {
+		proxyRegistry.Register(f.Path, f)
+	}
 
 	// Set defaults
 	if f.FailDuration == 0 {
@@ -73,6 +183,26 @@ func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 	}
 	if f.ResponseTimeout == 0 {
 		f.ResponseTimeout = caddy.Duration(5 * time.Second)
+	}
+
+	// Set health check defaults and start health checkers
+	for upstream, hc := range f.HealthChecks {
+		if hc.Interval == 0 {
+			hc.Interval = caddy.Duration(30 * time.Second)
+		}
+		if hc.Timeout == 0 {
+			hc.Timeout = caddy.Duration(5 * time.Second)
+		}
+		if hc.ExpectedStatus == 0 {
+			hc.ExpectedStatus = 200
+		}
+		if hc.Path == "" {
+			hc.Path = "/health"
+		}
+
+		// Start health check goroutine for this upstream
+		f.wg.Add(1)
+		go f.runHealthCheck(upstream, hc)
 	}
 
 	// Create HTTP transport
@@ -116,10 +246,203 @@ func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// Cleanup stops health check goroutines
+func (f *FailoverProxy) Cleanup() error {
+	close(f.shutdown)
+	f.wg.Wait()
+
+	// Unregister from global registry
+	if f.Path != "" {
+		proxyRegistry.Unregister(f.Path, f)
+	}
+	return nil
+}
+
+// GetUpstreamStatus returns the current status of all upstreams
+func (f *FailoverProxy) GetUpstreamStatus() []UpstreamStatus {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	var statuses []UpstreamStatus
+	for _, upstream := range f.Upstreams {
+		status := UpstreamStatus{
+			Host:        upstream,
+			HealthCheck: f.HealthChecks[upstream] != nil,
+		}
+
+		// Determine status
+		if healthy, exists := f.healthStatus[upstream]; exists {
+			if healthy {
+				status.Status = "UP"
+			} else {
+				status.Status = "UNHEALTHY"
+			}
+		} else if lastFail, failed := f.failureCache[upstream]; failed {
+			if time.Since(lastFail) < time.Duration(f.FailDuration) {
+				status.Status = "DOWN"
+				status.LastFailure = lastFail
+			} else {
+				status.Status = "UP"
+			}
+		} else {
+			status.Status = "UP"
+		}
+
+		// Add last check time if available
+		if checkTime, exists := f.lastCheckTime[upstream]; exists {
+			status.LastCheck = checkTime
+		}
+
+		// Add response time if available
+		if respTime, exists := f.responseTime[upstream]; exists {
+			status.ResponseTime = respTime
+		}
+
+		statuses = append(statuses, status)
+	}
+	return statuses
+}
+
+// runHealthCheck runs periodic health checks for an upstream
+func (f *FailoverProxy) runHealthCheck(upstreamURL string, hc *HealthCheck) {
+	defer f.wg.Done()
+
+	u, err := url.Parse(upstreamURL)
+	if err != nil {
+		f.logger.Error("invalid upstream URL for health check",
+			zap.String("upstream", upstreamURL),
+			zap.Error(err))
+		return
+	}
+
+	// Build health check URL
+	healthURL := *u
+	healthURL.Path = hc.Path
+	healthURL.RawQuery = ""
+
+	ticker := time.NewTicker(time.Duration(hc.Interval))
+	defer ticker.Stop()
+
+	// Perform initial health check
+	f.performHealthCheck(healthURL.String(), upstreamURL, hc)
+
+	for {
+		select {
+		case <-ticker.C:
+			f.performHealthCheck(healthURL.String(), upstreamURL, hc)
+		case <-f.shutdown:
+			return
+		}
+	}
+}
+
+// performHealthCheck performs a single health check
+func (f *FailoverProxy) performHealthCheck(healthURL, upstreamURL string, hc *HealthCheck) {
+	u, _ := url.Parse(healthURL)
+	client := f.httpClient
+	if u.Scheme == "https" {
+		client = f.httpsClient
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(hc.Timeout))
+	defer cancel()
+
+	start := time.Now()
+	req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
+	if err != nil {
+		f.setHealthStatus(upstreamURL, false)
+		f.logger.Debug("health check failed to create request",
+			zap.String("upstream", upstreamURL),
+			zap.Error(err))
+		return
+	}
+
+	resp, err := client.Do(req)
+	elapsed := time.Since(start).Milliseconds()
+
+	// Update check time and response time
+	f.mu.Lock()
+	f.lastCheckTime[upstreamURL] = time.Now()
+	if err == nil {
+		f.responseTime[upstreamURL] = elapsed
+	}
+	f.mu.Unlock()
+
+	if err != nil {
+		f.setHealthStatus(upstreamURL, false)
+		f.logger.Debug("health check failed",
+			zap.String("upstream", upstreamURL),
+			zap.Error(err))
+		return
+	}
+	defer resp.Body.Close()
+
+	// Drain the body to allow connection reuse
+	io.Copy(io.Discard, resp.Body)
+
+	healthy := resp.StatusCode == hc.ExpectedStatus
+	f.setHealthStatus(upstreamURL, healthy)
+
+	if healthy {
+		f.logger.Debug("health check passed",
+			zap.String("upstream", upstreamURL),
+			zap.Int("status", resp.StatusCode))
+	} else {
+		f.logger.Warn("health check failed",
+			zap.String("upstream", upstreamURL),
+			zap.Int("status", resp.StatusCode),
+			zap.Int("expected", hc.ExpectedStatus))
+	}
+}
+
+// setHealthStatus updates the health status of an upstream
+func (f *FailoverProxy) setHealthStatus(upstreamURL string, healthy bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	prevStatus, exists := f.healthStatus[upstreamURL]
+	f.healthStatus[upstreamURL] = healthy
+
+	// Log status changes
+	if !exists || prevStatus != healthy {
+		if healthy {
+			// Clear failure cache when upstream becomes healthy
+			delete(f.failureCache, upstreamURL)
+			f.logger.Info("upstream became healthy",
+				zap.String("upstream", upstreamURL))
+		} else {
+			f.logger.Warn("upstream became unhealthy",
+				zap.String("upstream", upstreamURL))
+		}
+	}
+}
+
+// isHealthy checks if an upstream is healthy
+func (f *FailoverProxy) isHealthy(upstreamURL string) bool {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	// If no health check is configured, consider it healthy
+	if _, hasHealthCheck := f.HealthChecks[upstreamURL]; !hasHealthCheck {
+		return true
+	}
+
+	// Return health status (default to unhealthy if not yet checked)
+	healthy, exists := f.healthStatus[upstreamURL]
+	return exists && healthy
+}
+
 // ServeHTTP handles the HTTP request
 func (f *FailoverProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	// Try each upstream in order
 	for _, upstreamURL := range f.Upstreams {
+		// Check if upstream is healthy
+		if !f.isHealthy(upstreamURL) {
+			f.logger.Debug("skipping unhealthy upstream",
+				zap.String("url", upstreamURL))
+			continue
+		}
+
 		// Check if upstream is in failure state
 		f.mu.RLock()
 		lastFail, failed := f.failureCache[upstreamURL]
@@ -269,6 +592,23 @@ func (f *FailoverProxy) tryUpstream(w http.ResponseWriter, r *http.Request, upst
 func parseFailoverProxy(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	f := &FailoverProxy{
 		UpstreamHeaders: make(map[string]map[string]string),
+		HealthChecks:    make(map[string]*HealthCheck),
+	}
+
+	// Try to extract the path from the current context
+	if h.State != nil {
+		if segments := h.State["matcher_segments"]; segments != nil {
+			if segs, ok := segments.([]caddyhttp.MatcherSet); ok && len(segs) > 0 {
+				for _, matcherSet := range segs {
+					for _, matcher := range matcherSet {
+						if pathMatcher, ok := matcher.(caddyhttp.MatchPath); ok && len(pathMatcher) > 0 {
+							f.Path = string(pathMatcher[0])
+							break
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// Parse directive arguments (upstream URLs)
@@ -314,6 +654,13 @@ func parseFailoverProxy(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, er
 			case "insecure_skip_verify":
 				f.InsecureSkipVerify = true
 
+			case "status_path":
+				// Allow manual configuration of the path for status reporting
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				f.Path = h.Val()
+
 			case "header_up":
 				// Format: header_up <upstream_url> <header_name> <header_value>
 				if !h.NextArg() {
@@ -336,6 +683,62 @@ func parseFailoverProxy(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, er
 					f.UpstreamHeaders[upstreamURL] = make(map[string]string)
 				}
 				f.UpstreamHeaders[upstreamURL][headerName] = headerValue
+
+			case "health_check":
+				// Format: health_check <upstream_url> { ... }
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				upstreamURL := h.Val()
+
+				hc := &HealthCheck{}
+
+				// Parse nested block for health check options
+				for h.NextBlock(1) {
+					switch h.Val() {
+					case "path":
+						if !h.NextArg() {
+							return nil, h.ArgErr()
+						}
+						hc.Path = h.Val()
+
+					case "interval":
+						if !h.NextArg() {
+							return nil, h.ArgErr()
+						}
+						dur, err := caddy.ParseDuration(h.Val())
+						if err != nil {
+							return nil, h.Errf("invalid health check interval: %v", err)
+						}
+						hc.Interval = caddy.Duration(dur)
+
+					case "timeout":
+						if !h.NextArg() {
+							return nil, h.ArgErr()
+						}
+						dur, err := caddy.ParseDuration(h.Val())
+						if err != nil {
+							return nil, h.Errf("invalid health check timeout: %v", err)
+						}
+						hc.Timeout = caddy.Duration(dur)
+
+					case "expected_status":
+						if !h.NextArg() {
+							return nil, h.ArgErr()
+						}
+						var status int
+						_, err := fmt.Sscanf(h.Val(), "%d", &status)
+						if err != nil {
+							return nil, h.Errf("invalid expected_status: %v", err)
+						}
+						hc.ExpectedStatus = status
+
+					default:
+						return nil, h.Errf("unknown health_check subdirective: %s", h.Val())
+					}
+				}
+
+				f.HealthChecks[upstreamURL] = hc
 
 			default:
 				return nil, h.Errf("unknown subdirective: %s", h.Val())
@@ -377,9 +780,46 @@ func (f *FailoverProxy) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
+// FailoverStatusHandler provides an HTTP endpoint for status information
+type FailoverStatusHandler struct{}
+
+// CaddyModule returns the Caddy module information
+func (FailoverStatusHandler) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "http.handlers.failover_status",
+		New: func() caddy.Module { return new(FailoverStatusHandler) },
+	}
+}
+
+// ServeHTTP handles the status request
+func (h FailoverStatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return nil
+	}
+
+	status := proxyRegistry.GetStatus()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
+	return nil
+}
+
+// parseFailoverStatus parses the failover_status directive
+func parseFailoverStatus(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	for h.Next() {
+		if h.NextArg() {
+			return nil, h.ArgErr()
+		}
+	}
+	return FailoverStatusHandler{}, nil
+}
+
 // Interface guards
 var (
 	_ caddy.Provisioner           = (*FailoverProxy)(nil)
+	_ caddy.CleanerUpper          = (*FailoverProxy)(nil)
 	_ caddyhttp.MiddlewareHandler = (*FailoverProxy)(nil)
 	_ caddyfile.Unmarshaler       = (*FailoverProxy)(nil)
+	_ caddy.Module                = (*FailoverStatusHandler)(nil)
+	_ caddyhttp.MiddlewareHandler = (*FailoverStatusHandler)(nil)
 )

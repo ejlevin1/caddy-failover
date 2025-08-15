@@ -1,0 +1,61 @@
+{
+    order failover_proxy before reverse_proxy
+    debug
+}
+
+:8080 {
+    handle /test {
+        # Configure with health checks
+        failover_proxy http://httpbin.org https://httpbin.org {
+            fail_duration 10s
+            dial_timeout 2s
+            response_timeout 5s
+            insecure_skip_verify
+
+            # Health check for first upstream
+            health_check http://httpbin.org {
+                path /status/200
+                interval 5s
+                timeout 3s
+                expected_status 200
+            }
+
+            # Health check for second upstream
+            health_check https://httpbin.org {
+                path /status/200
+                interval 5s
+                timeout 3s
+                expected_status 200
+            }
+        }
+    }
+
+    handle /unhealthy {
+        # Test with one unhealthy upstream
+        failover_proxy http://localhost:9999 https://httpbin.org {
+            fail_duration 10s
+            dial_timeout 2s
+            response_timeout 5s
+
+            # This will fail (server doesn't exist)
+            health_check http://localhost:9999 {
+                path /health
+                interval 5s
+                timeout 2s
+                expected_status 200
+            }
+
+            # This should succeed
+            health_check https://httpbin.org {
+                path /status/200
+                interval 5s
+                timeout 3s
+                expected_status 200
+            }
+        }
+    }
+
+    handle /health {
+        respond "OK" 200
+    }
+}

@@ -172,6 +172,11 @@ func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 	f.shutdown = make(chan struct{})
 
 	// Register with global registry
+	// If no path is set, use a generic identifier based on upstreams
+	if f.Path == "" && len(f.Upstreams) > 0 {
+		// Generate a path identifier from the first upstream for tracking
+		f.Path = fmt.Sprintf("auto:%s", f.Upstreams[0])
+	}
 	if f.Path != "" {
 		proxyRegistry.Register(f.Path, f)
 	}
@@ -646,6 +651,7 @@ func parseFailoverProxy(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, er
 	}
 
 	// Try to extract the path from the current context
+	// This is important for status tracking - without a path, the proxy won't be registered
 	if h.State != nil {
 		if segments := h.State["matcher_segments"]; segments != nil {
 			if segs, ok := segments.([]caddyhttp.MatcherSet); ok && len(segs) > 0 {

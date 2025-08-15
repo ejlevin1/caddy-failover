@@ -70,12 +70,23 @@ func (r *ProxyRegistry) GetStatus() []PathStatus {
 
 	var status []PathStatus
 	for path, proxies := range r.proxies {
+		// Use HandlePath if available for display, otherwise use the registration path
+		displayPath := path
+		if len(proxies) > 0 && proxies[0].HandlePath != "" {
+			displayPath = proxies[0].HandlePath
+		}
+
 		ps := PathStatus{
-			Path:            path,
+			Path:            displayPath,
 			FailoverProxies: []UpstreamStatus{},
 		}
+
 		for _, proxy := range proxies {
 			ps.FailoverProxies = append(ps.FailoverProxies, proxy.GetUpstreamStatus()...)
+			// Get the active upstream for this proxy
+			if active := proxy.GetActiveUpstream(); active != "" {
+				ps.Active = active
+			}
 		}
 		status = append(status, ps)
 	}
@@ -85,6 +96,7 @@ func (r *ProxyRegistry) GetStatus() []PathStatus {
 // PathStatus represents the status of failover proxies for a path
 type PathStatus struct {
 	Path            string           `json:"path"`
+	Active          string           `json:"active,omitempty"`
 	FailoverProxies []UpstreamStatus `json:"failover_proxies"`
 }
 
@@ -140,6 +152,9 @@ type FailoverProxy struct {
 	// Path is the route path this proxy handles (for status reporting)
 	Path string `json:"path,omitempty"`
 
+	// HandlePath is the actual handle block path (e.g., /auth/*)
+	HandlePath string `json:"handle_path,omitempty"`
+
 	logger        *zap.Logger
 	replacer      *caddy.Replacer
 	httpClient    *http.Client
@@ -173,12 +188,13 @@ func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 
 	// Register with global registry
 	// If no path is set, use a generic identifier based on upstreams
-	if f.Path == "" && len(f.Upstreams) > 0 {
+	registrationPath := f.Path
+	if registrationPath == "" && len(f.Upstreams) > 0 {
 		// Generate a path identifier from the first upstream for tracking
-		f.Path = fmt.Sprintf("auto:%s", f.Upstreams[0])
+		registrationPath = fmt.Sprintf("auto:%s", f.Upstreams[0])
 	}
-	if f.Path != "" {
-		proxyRegistry.Register(f.Path, f)
+	if registrationPath != "" {
+		proxyRegistry.Register(registrationPath, f)
 	}
 
 	// Set defaults
@@ -307,10 +323,46 @@ func (f *FailoverProxy) Cleanup() error {
 	f.wg.Wait()
 
 	// Unregister from global registry
-	if f.Path != "" {
-		proxyRegistry.Unregister(f.Path, f)
+	registrationPath := f.Path
+	if registrationPath == "" && len(f.Upstreams) > 0 {
+		registrationPath = fmt.Sprintf("auto:%s", f.Upstreams[0])
+	}
+	if registrationPath != "" {
+		proxyRegistry.Unregister(registrationPath, f)
 	}
 	return nil
+}
+
+// GetActiveUpstream returns the currently active (healthy and not failed) upstream
+func (f *FailoverProxy) GetActiveUpstream() string {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	// Find the first healthy upstream that isn't in failure state
+	for _, upstream := range f.Upstreams {
+		// Check if upstream is healthy
+		if hc := f.HealthChecks[upstream]; hc != nil {
+			if healthy, exists := f.healthStatus[upstream]; exists && !healthy {
+				continue // Skip unhealthy upstreams
+			}
+		}
+
+		// Check if upstream is in failure state
+		if lastFail, failed := f.failureCache[upstream]; failed {
+			if time.Since(lastFail) < time.Duration(f.FailDuration) {
+				continue // Skip failed upstreams
+			}
+		}
+
+		// This upstream is active
+		return upstream
+	}
+
+	// If no healthy upstreams, return the first one as fallback
+	if len(f.Upstreams) > 0 {
+		return f.Upstreams[0]
+	}
+	return ""
 }
 
 // GetUpstreamStatus returns the current status of all upstreams
@@ -677,7 +729,9 @@ func parseFailoverProxy(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, er
 				for _, matcherSet := range segs {
 					for _, matcher := range matcherSet {
 						if pathMatcher, ok := matcher.(caddyhttp.MatchPath); ok && len(pathMatcher) > 0 {
-							f.Path = string(pathMatcher[0])
+							f.HandlePath = string(pathMatcher[0])
+							// Also set Path as default if not explicitly overridden later
+							f.Path = f.HandlePath
 							break
 						}
 					}
@@ -731,6 +785,7 @@ func parseFailoverProxy(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, er
 
 			case "status_path":
 				// Allow manual configuration of the path for status reporting
+				// This overrides the registration key but preserves HandlePath for display
 				if !h.NextArg() {
 					return nil, h.ArgErr()
 				}

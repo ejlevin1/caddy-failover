@@ -1,3 +1,16 @@
+# [1.4.0](https://github.com/ejlevin1/caddy-failover/compare/v1.3.0...v1.4.0) (2025-08-15)
+
+
+### Bug Fixes
+
+* improve Docker image publishing with semantic versioning ([b44619f](https://github.com/ejlevin1/caddy-failover/commit/b44619f9ee34ab305d1c7251f1fbef7c10a9e8df))
+* resolve invalid Docker tag format in build workflow ([be1e773](https://github.com/ejlevin1/caddy-failover/commit/be1e773dc1d6408c016536a963738c186f4dfe65))
+
+
+### Features
+
+* embed git information into Docker images ([cd3a89c](https://github.com/ejlevin1/caddy-failover/commit/cd3a89c17a7d2b1e87f437fa0c1657cfe0fecae3))
+
 # [1.3.0](https://github.com/ejlevin1/caddy-failover/compare/v1.2.0...v1.3.0) (2025-08-15)
 
 

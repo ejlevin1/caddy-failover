@@ -1,3 +1,16 @@
+# [1.2.0](https://github.com/ejlevin1/caddy-failover/compare/v1.1.0...v1.2.0) (2025-08-15)
+
+
+### Bug Fixes
+
+* add path base support and debug logging to fix integration tests ([e2738c7](https://github.com/ejlevin1/caddy-failover/commit/e2738c7314df99e5f777d9738a7bd25236c08028))
+
+
+### Features
+
+* add per-upstream health check support ([1d15670](https://github.com/ejlevin1/caddy-failover/commit/1d15670d8b2c4410cfbe216aa54893857bb76f89))
+* add status API endpoint for monitoring failover proxies ([bb120f2](https://github.com/ejlevin1/caddy-failover/commit/bb120f2bf329b25ef8499bf0458bab258a490686))
+
 # [1.1.0](https://github.com/ejlevin1/caddy-failover/compare/v1.0.3...v1.1.0) (2025-08-15)
 
 

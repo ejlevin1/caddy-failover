@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  caddy:
+    image: ghcr.io/ejlevin1/caddy-failover:latest
+    container_name: caddy-failover
+    ports:
+      - "80:80"
+      - "443:443"
+      - "2019:2019"  # Admin API
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro  # Optional: custom certificates
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      CADDY_ADMIN: :2019
+    restart: unless-stopped
+
+    # For Docker Desktop on Mac/Windows to access host services
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local

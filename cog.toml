@@ -1,0 +1,75 @@
+# Cocogitto configuration
+# https://docs.cocogitto.io/
+
+[changelog]
+path = "CHANGELOG.md"
+template = "default"
+remote = "github.com"
+repository = "ejlevin1/caddy-failover"
+owner = "ejlevin1"
+authors = [
+    { signature = "ejlevin1", username = "ejlevin1" }
+]
+
+[bump_profiles]
+[bump_profiles.default]
+pre_bump_hooks = [
+    "go test -short ./...",
+    "go mod tidy"
+]
+post_bump_hooks = [
+    "git push",
+    "git push --tags"
+]
+
+[git_hooks]
+# Commit message validation hook
+[git_hooks.commit-msg]
+script = """#!/bin/sh
+set -e
+
+# Validate commit message with cocogitto
+if ! cog verify --file "$1"; then
+    echo ""
+    echo "❌ Commit message does not follow Conventional Commits format!"
+    echo ""
+    echo "Valid format: <type>(<scope>): <subject>"
+    echo ""
+    echo "Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
+    echo ""
+    echo "Examples:"
+    echo "  feat: add new failover strategy"
+    echo "  fix: resolve connection timeout issue"
+    echo "  docs: update installation guide"
+    echo "  feat(api): add retry mechanism"
+    echo "  fix!: breaking change in config format"
+    echo ""
+    echo "For more info: https://www.conventionalcommits.org/"
+    exit 1
+fi
+"""
+
+# Pre-push hook to run tests
+[git_hooks.pre-push]
+script = """#!/bin/sh
+set -e
+
+echo "Running pre-push checks..."
+
+# Run tests
+echo "Running tests..."
+go test -short ./...
+
+# Check formatting
+echo "Checking code formatting..."
+if [ -n "$(gofmt -l .)" ]; then
+    echo "❌ Code is not formatted. Run 'go fmt ./...' to fix."
+    exit 1
+fi
+
+# Run go vet
+echo "Running go vet..."
+go vet ./...
+
+echo "✅ All pre-push checks passed!"
+"""

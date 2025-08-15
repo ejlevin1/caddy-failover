@@ -1,0 +1,136 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  packages: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'ejlevin1'
+
+    steps:
+      - name: Generate GitHub App Token
+        id: generate_token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.SEMANTIC_RELEASE_APP_ID }}
+          private_key: ${{ secrets.SEMANTIC_RELEASE_APP_PRIVATE_KEY }}
+        continue-on-error: true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}
+          persist-credentials: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Install semantic-release dependencies
+        run: |
+          npm init -y || true
+          npm install --save-dev \
+            semantic-release \
+            @semantic-release/changelog \
+            @semantic-release/git \
+            @semantic-release/github \
+            @semantic-release/commit-analyzer \
+            @semantic-release/release-notes-generator
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install xcaddy
+        run: go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+      - name: Run semantic-release
+        id: semantic
+        env:
+          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}
+          GIT_AUTHOR_NAME: semantic-release-bot
+          GIT_AUTHOR_EMAIL: semantic-release-bot@users.noreply.github.com
+          GIT_COMMITTER_NAME: semantic-release-bot
+          GIT_COMMITTER_EMAIL: semantic-release-bot@users.noreply.github.com
+        run: npx semantic-release
+
+      - name: Build Caddy with plugin
+        if: steps.semantic.outputs.new_release_published == 'true'
+        run: |
+          xcaddy build \
+            --with github.com/ejlevin1/caddy-failover=. \
+            --output ./caddy
+
+      - name: Create release artifacts
+        if: steps.semantic.outputs.new_release_published == 'true'
+        run: |
+          VERSION=${{ steps.semantic.outputs.new_release_version }}
+          mkdir -p dist
+
+          # Linux AMD64
+          GOOS=linux GOARCH=amd64 xcaddy build \
+            --with github.com/ejlevin1/caddy-failover=. \
+            --output ./dist/caddy-linux-amd64
+          tar -czf ./dist/caddy-failover-${VERSION}-linux-amd64.tar.gz -C ./dist caddy-linux-amd64
+
+          # Linux ARM64
+          GOOS=linux GOARCH=arm64 xcaddy build \
+            --with github.com/ejlevin1/caddy-failover=. \
+            --output ./dist/caddy-linux-arm64
+          tar -czf ./dist/caddy-failover-${VERSION}-linux-arm64.tar.gz -C ./dist caddy-linux-arm64
+
+          # Darwin AMD64
+          GOOS=darwin GOARCH=amd64 xcaddy build \
+            --with github.com/ejlevin1/caddy-failover=. \
+            --output ./dist/caddy-darwin-amd64
+          tar -czf ./dist/caddy-failover-${VERSION}-darwin-amd64.tar.gz -C ./dist caddy-darwin-amd64
+
+          # Darwin ARM64
+          GOOS=darwin GOARCH=arm64 xcaddy build \
+            --with github.com/ejlevin1/caddy-failover=. \
+            --output ./dist/caddy-darwin-arm64
+          tar -czf ./dist/caddy-failover-${VERSION}-darwin-arm64.tar.gz -C ./dist caddy-darwin-arm64
+
+          # Windows AMD64
+          GOOS=windows GOARCH=amd64 xcaddy build \
+            --with github.com/ejlevin1/caddy-failover=. \
+            --output ./dist/caddy-windows-amd64.exe
+          zip -j ./dist/caddy-failover-${VERSION}-windows-amd64.zip ./dist/caddy-windows-amd64.exe
+
+      - name: Upload release artifacts
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.semantic.outputs.new_release_version }}
+          files: |
+            ./dist/*.tar.gz
+            ./dist/*.zip
+          token: ${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        if: steps.semantic.outputs.new_release_published == 'true'
+        run: |
+          VERSION=${{ steps.semantic.outputs.new_release_version }}
+
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+          docker build -t ghcr.io/ejlevin1/caddy-failover:${VERSION} .
+          docker tag ghcr.io/ejlevin1/caddy-failover:${VERSION} ghcr.io/ejlevin1/caddy-failover:latest
+
+          docker push ghcr.io/ejlevin1/caddy-failover:${VERSION}
+          docker push ghcr.io/ejlevin1/caddy-failover:latest

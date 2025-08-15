@@ -1,0 +1,24 @@
+# Code Owners for caddy-failover repository
+# These owners will be requested for review when someone opens a pull request
+
+# Global owners for all files
+* @ejlevin1
+
+# GitHub workflows and actions
+/.github/ @ejlevin1
+
+# Core plugin code
+*.go @ejlevin1
+go.mod @ejlevin1
+go.sum @ejlevin1
+
+# Build and deployment files
+Dockerfile @ejlevin1
+Makefile @ejlevin1
+
+# Documentation
+*.md @ejlevin1
+/examples/ @ejlevin1
+
+# Test files
+/test/ @ejlevin1

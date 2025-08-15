@@ -1,0 +1,67 @@
+# Example Caddyfile using the failover_proxy directive
+# This demonstrates IDE-first development with remote fallback
+
+# IMPORTANT: Order directive must be in global options
+{
+    # Required to tell Caddy where to place failover_proxy in the middleware chain
+    order failover_proxy before reverse_proxy
+
+    # Optional: Admin API endpoint
+    admin :2019
+}
+
+# HTTPS configuration with custom certificate
+https://localhost:443 {
+    # Use custom certificates if you have them
+    # tls /path/to/cert.pem /path/to/key.pem
+
+    # API endpoint with failover
+    handle /api/* {
+        failover_proxy http://localhost:3000 https://api.production.com {
+            # How long to remember failed upstreams
+            fail_duration 3s
+
+            # Connection timeout
+            dial_timeout 2s
+
+            # Response timeout
+            response_timeout 5s
+
+            # Skip TLS verification for dev environments
+            insecure_skip_verify
+
+            # Headers for local development server
+            header_up http://localhost:3000 X-Environment development
+            header_up http://localhost:3000 X-Source local
+            header_up http://localhost:3000 Host api.production.com
+
+            # Headers for production fallback
+            header_up https://api.production.com X-Environment production
+            header_up https://api.production.com X-Source remote
+        }
+    }
+
+    # GraphQL endpoint with failover
+    handle /graphql {
+        failover_proxy http://localhost:4000 https://graphql.production.com {
+            fail_duration 3s
+            dial_timeout 2s
+            response_timeout 10s
+            insecure_skip_verify
+
+            header_up http://localhost:4000 X-GraphQL-Source local
+            header_up https://graphql.production.com X-GraphQL-Source remote
+        }
+    }
+
+    # Static files - no failover needed
+    handle {
+        root * /var/www/html
+        file_server
+    }
+}
+
+# HTTP to HTTPS redirect
+http://localhost:80 {
+    redir https://{host}{uri} permanent
+}

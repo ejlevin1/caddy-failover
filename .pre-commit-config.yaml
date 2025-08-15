@@ -1,0 +1,47 @@
+# See https://pre-commit.com for more information
+repos:
+  # Cocogitto - Conventional Commits validation (Rust-based, no Node.js)
+  - repo: local
+    hooks:
+      - id: cocogitto-check
+        name: Check Conventional Commits
+        stages: [commit-msg]
+        entry: cog verify --file
+        language: system
+        pass_filenames: true
+        always_run: false
+
+  # Go-specific hooks
+  - repo: https://github.com/TekWizely/pre-commit-golang
+    rev: v1.0.0-rc.1
+    hooks:
+      - id: go-fmt-repo
+        name: Format Go code
+      - id: go-vet-repo-mod
+        name: Vet Go code
+      - id: go-mod-tidy-repo
+        name: Tidy go.mod
+      - id: go-test-repo-mod
+        name: Run Go tests
+        args: [-short]
+
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  # Security checks
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']

@@ -1,0 +1,79 @@
+name: Configure Branch Protection
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/branch-protection.yml'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  configure-protection:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'ejlevin1' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Configure main branch protection
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            try {
+              await github.rest.repos.updateBranchProtection({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                branch: 'main',
+                required_status_checks: {
+                  strict: true,
+                  contexts: ['test', 'build', 'commitlint']
+                },
+                enforce_admins: false,
+                required_pull_request_reviews: {
+                  required_approving_review_count: 1,
+                  dismiss_stale_reviews: true,
+                  require_code_owner_reviews: true,
+                  require_last_push_approval: false,
+                  bypass_pull_request_allowances: {
+                    users: ['ejlevin1', 'semantic-release-bot'],
+                    teams: [],
+                    apps: []
+                  }
+                },
+                restrictions: null,
+                allow_force_pushes: false,
+                allow_deletions: false,
+                block_creations: false,
+                required_conversation_resolution: true,
+                lock_branch: false,
+                allow_fork_syncing: false
+              });
+
+              console.log('✅ Branch protection rules configured successfully for main branch');
+            } catch (error) {
+              console.error('❌ Failed to configure branch protection:', error.message);
+
+              // If the error is due to missing admin permissions, provide instructions
+              if (error.status === 403) {
+                console.log('\n📝 Manual Configuration Required:');
+                console.log('Please configure branch protection manually in GitHub:');
+                console.log('1. Go to Settings → Branches');
+                console.log('2. Click "Add rule" for the main branch');
+                console.log('3. Configure the following settings:');
+                console.log('   - Require pull request reviews before merging (1 approval)');
+                console.log('   - Dismiss stale pull request approvals when new commits are pushed');
+                console.log('   - Require review from CODEOWNERS');
+                console.log('   - Allow repository owner (ejlevin1) to bypass PR requirements');
+                console.log('   - Require status checks to pass (test, build)');
+                console.log('   - Require branches to be up to date before merging');
+                console.log('   - Require conversation resolution before merging');
+                console.log('   - Do not allow force pushes');
+                console.log('   - Do not allow deletions');
+              }
+
+              throw error;
+            }

@@ -315,6 +315,8 @@ Monitor the health and status of all failover proxies via REST API:
     # Proxies with status tracking
     handle /auth/* {
         failover_proxy http://auth1.local http://auth2.local {
+            # status_path is recommended for clear path identification
+            # If not specified, an auto-generated identifier will be used
             status_path /auth/*
             health_check http://auth1.local {
                 path /health

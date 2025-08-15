@@ -1,3 +1,16 @@
+# [1.5.0](https://github.com/ejlevin1/caddy-failover/compare/v1.4.0...v1.5.0) (2025-08-15)
+
+
+### Bug Fixes
+
+* failover_status returning null when status_path not specified ([daa3263](https://github.com/ejlevin1/caddy-failover/commit/daa3263ff4ccf3eb7c01a34f84bd948d020ad682))
+* update integration test to use local mock server ([598780f](https://github.com/ejlevin1/caddy-failover/commit/598780f8315adc38fff6f6fa093d63bd9ea28299))
+
+
+### Features
+
+* add failover warning logs and custom health check user agent ([54c6710](https://github.com/ejlevin1/caddy-failover/commit/54c671033a7896b8a4edf7ce81ba65a2cb4d0d7b))
+
 # [1.4.0](https://github.com/ejlevin1/caddy-failover/compare/v1.3.0...v1.4.0) (2025-08-15)
 
 

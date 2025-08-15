@@ -412,6 +412,9 @@ func (f *FailoverProxy) performHealthCheck(healthURL, upstreamURL string, hc *He
 		return
 	}
 
+	// Set custom user agent for health checks
+	req.Header.Set("User-Agent", "Caddy-failover-health-check/1.0")
+
 	resp, err := client.Do(req)
 	elapsed := time.Since(start).Milliseconds()
 
@@ -489,12 +492,16 @@ func (f *FailoverProxy) isHealthy(upstreamURL string) bool {
 
 // ServeHTTP handles the HTTP request
 func (f *FailoverProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	// Track the index of the upstream we're trying
+	attemptedUpstreams := 0
+
 	// Try each upstream in order
-	for _, upstreamURL := range f.Upstreams {
+	for i, upstreamURL := range f.Upstreams {
 		// Check if upstream is healthy
 		if !f.isHealthy(upstreamURL) {
 			f.logger.Debug("skipping unhealthy upstream",
 				zap.String("url", upstreamURL))
+			attemptedUpstreams++
 			continue
 		}
 
@@ -507,7 +514,18 @@ func (f *FailoverProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			f.logger.Debug("skipping failed upstream",
 				zap.String("url", upstreamURL),
 				zap.Duration("remaining", time.Duration(f.FailDuration)-time.Since(lastFail)))
+			attemptedUpstreams++
 			continue
+		}
+
+		// Log failover warning if we're not using the primary upstream
+		if attemptedUpstreams > 0 {
+			f.logger.Warn("failing over to alternate upstream",
+				zap.String("primary", f.Upstreams[0]),
+				zap.String("failover_to", upstreamURL),
+				zap.Int("upstream_index", i),
+				zap.String("method", r.Method),
+				zap.String("path", r.URL.Path))
 		}
 
 		// Log which upstream we're trying
@@ -539,6 +557,7 @@ func (f *FailoverProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		f.logger.Warn("upstream failed, trying next",
 			zap.String("url", upstreamURL),
 			zap.Error(err))
+		attemptedUpstreams++
 	}
 
 	// All upstreams failed

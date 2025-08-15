@@ -1,3 +1,11 @@
+# [1.1.0](https://github.com/ejlevin1/caddy-failover/compare/v1.0.3...v1.1.0) (2025-08-15)
+
+
+### Features
+
+* add comprehensive debug logging for upstream selection ([6c64cdf](https://github.com/ejlevin1/caddy-failover/commit/6c64cdf2f520084b4b605b4836494318a41704de))
+* add path base support and dynamic X-Forwarded-Proto header ([e5af32c](https://github.com/ejlevin1/caddy-failover/commit/e5af32c46559ff5e30472302a965fa4995b7f237))
+
 ## [1.0.3](https://github.com/ejlevin1/caddy-failover/compare/v1.0.2...v1.0.3) (2025-08-15)
 
 

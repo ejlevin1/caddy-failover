@@ -11,6 +11,7 @@ A Caddy plugin that provides intelligent failover between multiple upstream serv
 - **Failure caching**: Remembers failed upstreams for configurable duration to avoid repeated attempts
 - **TLS configuration**: Supports skipping certificate verification for development environments
 - **Path base support**: Upstreams can have different base paths that are preserved in routing
+- **Environment variables**: Supports environment variable expansion in upstream URLs and header values
 - **Debug logging**: Comprehensive logging for troubleshooting upstream selection
 
 ## Installation
@@ -242,6 +243,54 @@ Upstreams can have different base paths that are preserved:
         }
     }
 }
+```
+
+### Environment Variables
+
+The plugin supports environment variable expansion in upstream URLs and header values using Caddy's standard `{env.VARIABLE_NAME}` syntax:
+
+```caddyfile
+{
+    order failover_proxy before reverse_proxy
+}
+
+:443 {
+    handle /api/* {
+        # Environment variables in upstream URLs
+        failover_proxy http://{env.PRIMARY_HOST}:3000 https://{env.BACKUP_HOST} {
+            fail_duration 5s
+
+            # Environment variables in header values
+            header_up http://{env.PRIMARY_HOST}:3000 X-Environment {env.ENVIRONMENT}
+            header_up http://{env.PRIMARY_HOST}:3000 X-API-Key {env.API_KEY}
+            header_up https://{env.BACKUP_HOST} X-Environment production
+        }
+    }
+}
+```
+
+Set the environment variables when running Caddy:
+
+```bash
+export PRIMARY_HOST=localhost
+export BACKUP_HOST=api.example.com
+export ENVIRONMENT=development
+export API_KEY=secret-key-123
+
+caddy run --config Caddyfile
+```
+
+Or with Docker:
+
+```bash
+docker run -d \
+    -e PRIMARY_HOST=host.docker.internal \
+    -e BACKUP_HOST=api.example.com \
+    -e ENVIRONMENT=development \
+    -e API_KEY=secret-key-123 \
+    -v $(pwd)/Caddyfile:/etc/caddy/Caddyfile \
+    -p 443:443 \
+    ghcr.io/ejlevin1/caddy-failover:latest
 ```
 
 ### Status API

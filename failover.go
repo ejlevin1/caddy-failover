@@ -141,6 +141,7 @@ type FailoverProxy struct {
 	Path string `json:"path,omitempty"`
 
 	logger        *zap.Logger
+	replacer      *caddy.Replacer
 	httpClient    *http.Client
 	httpsClient   *http.Client
 	failureCache  map[string]time.Time
@@ -163,6 +164,7 @@ func (*FailoverProxy) CaddyModule() caddy.ModuleInfo {
 // Provision sets up the handler
 func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 	f.logger = ctx.Logger(f)
+	f.replacer = caddy.NewReplacer()
 	f.failureCache = make(map[string]time.Time)
 	f.healthStatus = make(map[string]bool)
 	f.lastCheckTime = make(map[string]time.Time)
@@ -184,6 +186,54 @@ func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 	if f.ResponseTimeout == 0 {
 		f.ResponseTimeout = caddy.Duration(5 * time.Second)
 	}
+
+	// Expand environment variables in upstream URLs
+	for i, upstream := range f.Upstreams {
+		expanded := f.replacer.ReplaceAll(upstream, "")
+		if expanded != upstream {
+			f.logger.Debug("expanded upstream URL",
+				zap.String("original", upstream),
+				zap.String("expanded", expanded))
+		}
+		f.Upstreams[i] = expanded
+	}
+
+	// Expand environment variables in upstream headers
+	expandedHeaders := make(map[string]map[string]string)
+	for upstream, headers := range f.UpstreamHeaders {
+		expandedUpstream := f.replacer.ReplaceAll(upstream, "")
+		if expandedUpstream != upstream {
+			f.logger.Debug("expanded upstream in header_up",
+				zap.String("original", upstream),
+				zap.String("expanded", expandedUpstream))
+		}
+		expandedHeaders[expandedUpstream] = make(map[string]string)
+		for name, value := range headers {
+			expandedValue := f.replacer.ReplaceAll(value, "")
+			if expandedValue != value {
+				f.logger.Debug("expanded header value",
+					zap.String("upstream", expandedUpstream),
+					zap.String("header", name),
+					zap.String("original", value),
+					zap.String("expanded", expandedValue))
+			}
+			expandedHeaders[expandedUpstream][name] = expandedValue
+		}
+	}
+	f.UpstreamHeaders = expandedHeaders
+
+	// Expand environment variables in health check URLs
+	expandedHealthChecks := make(map[string]*HealthCheck)
+	for upstream, hc := range f.HealthChecks {
+		expandedUpstream := f.replacer.ReplaceAll(upstream, "")
+		if expandedUpstream != upstream {
+			f.logger.Debug("expanded upstream in health_check",
+				zap.String("original", upstream),
+				zap.String("expanded", expandedUpstream))
+		}
+		expandedHealthChecks[expandedUpstream] = hc
+	}
+	f.HealthChecks = expandedHealthChecks
 
 	// Set health check defaults and start health checkers
 	for upstream, hc := range f.HealthChecks {

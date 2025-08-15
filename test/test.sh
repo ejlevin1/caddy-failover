@@ -14,7 +14,7 @@ cat > test-caddyfile <<EOF
 }
 
 :8080 {
-    handle /test/* {
+    handle /get {
         # Test with httpbin.org (should always work)
         failover_proxy http://httpbin.org https://httpbin.org {
             fail_duration 3s
@@ -27,8 +27,8 @@ cat > test-caddyfile <<EOF
         }
     }
 
-    handle /failover/* {
-        # Test with intentionally failing first upstream
+    handle /anything/* {
+        # Test with intentionally failing first upstream for failover
         failover_proxy http://localhost:9999 https://httpbin.org {
             fail_duration 3s
             dial_timeout 1s
@@ -47,7 +47,7 @@ echo "Starting Caddy container..."
 docker run --rm -d \
     --name caddy-test \
     -v $(pwd)/test-caddyfile:/etc/caddy/Caddyfile \
-    -p 8080:8080 \
+    -p 8090:8080 \
     caddy-failover:test
 
 echo "Waiting for Caddy to start..."
@@ -58,7 +58,7 @@ echo "===================="
 
 # Test 1: Basic proxy
 echo -n "Test 1 - Basic proxy: "
-response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/test/get)
+response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8090/get)
 if [ "$response" = "200" ]; then
     echo "✅ PASSED"
 else
@@ -70,7 +70,7 @@ fi
 
 # Test 2: Failover scenario
 echo -n "Test 2 - Failover: "
-response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/failover/get)
+response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8090/anything/test)
 if [ "$response" = "200" ]; then
     echo "✅ PASSED"
 else
@@ -82,7 +82,7 @@ fi
 
 # Test 3: Health check
 echo -n "Test 3 - Health check: "
-response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health)
+response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8090/health)
 if [ "$response" = "200" ]; then
     echo "✅ PASSED"
 else
@@ -94,7 +94,7 @@ fi
 
 # Test 4: Check custom headers
 echo -n "Test 4 - Custom headers: "
-headers=$(curl -s -I http://localhost:8080/test/headers | grep -i "x-test-header" || true)
+headers=$(curl -s http://localhost:8090/get | grep -i "x-test-header" || true)
 if [ -n "$headers" ]; then
     echo "✅ PASSED (headers might be upstream-only)"
 else

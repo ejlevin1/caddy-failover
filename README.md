@@ -85,6 +85,7 @@ https://localhost:443 {
 - `insecure_skip_verify` - Skip TLS certificate verification
 - `header_up <upstream> <name> <value>` - Set upstream-specific headers
 - `health_check <upstream> { ... }` - Configure health checks for an upstream
+- `status_path <path>` - Set the path identifier for status reporting
 
 #### Health Check Options
 
@@ -203,6 +204,65 @@ Upstreams can have different base paths that are preserved:
     }
 }
 ```
+
+### Status API
+
+Monitor the health and status of all failover proxies via REST API:
+
+```caddyfile
+{
+    order failover_proxy before reverse_proxy
+    order failover_status before respond
+}
+
+:443 {
+    # Status endpoint
+    handle /admin/failover/status {
+        failover_status
+    }
+
+    # Proxies with status tracking
+    handle /auth/* {
+        failover_proxy http://auth1.local http://auth2.local {
+            status_path /auth/*
+            health_check http://auth1.local {
+                path /health
+                interval 30s
+            }
+        }
+    }
+}
+```
+
+The status endpoint returns JSON with the current state of all upstreams:
+
+```json
+[
+    {
+        "path": "/auth/*",
+        "failover_proxies": [
+            {
+                "host": "http://auth1.local",
+                "status": "UP",
+                "health_check_enabled": true,
+                "last_check": "2024-01-15T10:30:45Z",
+                "response_time_ms": 125
+            },
+            {
+                "host": "http://auth2.local",
+                "status": "DOWN",
+                "health_check_enabled": false,
+                "last_failure": "2024-01-15T10:29:30Z"
+            }
+        ]
+    }
+]
+```
+
+Status values:
+- `UP` - Upstream is healthy and accepting requests
+- `DOWN` - Upstream failed recently and is in failure cache
+- `UNHEALTHY` - Health check is failing for this upstream
 
 ## Building from Source
 

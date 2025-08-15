@@ -3,6 +3,7 @@ package caddyfailover
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -21,7 +22,80 @@ import (
 
 func init() {
 	caddy.RegisterModule(&FailoverProxy{})
+	caddy.RegisterModule(&FailoverStatusHandler{})
 	httpcaddyfile.RegisterHandlerDirective("failover_proxy", parseFailoverProxy)
+	httpcaddyfile.RegisterHandlerDirective("failover_status", parseFailoverStatus)
+}
+
+var (
+	// Global registry to track all failover proxy instances
+	proxyRegistry = &ProxyRegistry{
+		proxies: make(map[string][]*FailoverProxy),
+	}
+)
+
+// ProxyRegistry tracks all failover proxy instances for status reporting
+type ProxyRegistry struct {
+	mu      sync.RWMutex
+	proxies map[string][]*FailoverProxy // path -> proxies
+}
+
+// Register adds a proxy to the registry
+func (r *ProxyRegistry) Register(path string, proxy *FailoverProxy) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.proxies[path] = append(r.proxies[path], proxy)
+}
+
+// Unregister removes a proxy from the registry
+func (r *ProxyRegistry) Unregister(path string, proxy *FailoverProxy) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	proxies := r.proxies[path]
+	for i, p := range proxies {
+		if p == proxy {
+			r.proxies[path] = append(proxies[:i], proxies[i+1:]...)
+			if len(r.proxies[path]) == 0 {
+				delete(r.proxies, path)
+			}
+			break
+		}
+	}
+}
+
+// GetStatus returns the status of all registered proxies
+func (r *ProxyRegistry) GetStatus() []PathStatus {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var status []PathStatus
+	for path, proxies := range r.proxies {
+		ps := PathStatus{
+			Path:            path,
+			FailoverProxies: []UpstreamStatus{},
+		}
+		for _, proxy := range proxies {
+			ps.FailoverProxies = append(ps.FailoverProxies, proxy.GetUpstreamStatus()...)
+		}
+		status = append(status, ps)
+	}
+	return status
+}
+
+// PathStatus represents the status of failover proxies for a path
+type PathStatus struct {
+	Path            string           `json:"path"`
+	FailoverProxies []UpstreamStatus `json:"failover_proxies"`
+}
+
+// UpstreamStatus represents the status of a single upstream
+type UpstreamStatus struct {
+	Host         string    `json:"host"`
+	Status       string    `json:"status"` // UP, DOWN, UNHEALTHY
+	LastCheck    time.Time `json:"last_check,omitempty"`
+	LastFailure  time.Time `json:"last_failure,omitempty"`
+	HealthCheck  bool      `json:"health_check_enabled"`
+	ResponseTime int64     `json:"response_time_ms,omitempty"`
 }
 
 // HealthCheck defines health check configuration for an upstream
@@ -63,14 +137,19 @@ type FailoverProxy struct {
 	// ResponseTimeout is the timeout for receiving response (default 5s)
 	ResponseTimeout caddy.Duration `json:"response_timeout,omitempty"`
 
-	logger       *zap.Logger
-	httpClient   *http.Client
-	httpsClient  *http.Client
-	failureCache map[string]time.Time
-	healthStatus map[string]bool // true = healthy, false = unhealthy
-	mu           sync.RWMutex
-	shutdown     chan struct{}
-	wg           sync.WaitGroup
+	// Path is the route path this proxy handles (for status reporting)
+	Path string `json:"path,omitempty"`
+
+	logger        *zap.Logger
+	httpClient    *http.Client
+	httpsClient   *http.Client
+	failureCache  map[string]time.Time
+	healthStatus  map[string]bool // true = healthy, false = unhealthy
+	lastCheckTime map[string]time.Time
+	responseTime  map[string]int64 // response time in milliseconds
+	mu            sync.RWMutex
+	shutdown      chan struct{}
+	wg            sync.WaitGroup
 }
 
 // CaddyModule returns the Caddy module information
@@ -86,7 +165,14 @@ func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 	f.logger = ctx.Logger(f)
 	f.failureCache = make(map[string]time.Time)
 	f.healthStatus = make(map[string]bool)
+	f.lastCheckTime = make(map[string]time.Time)
+	f.responseTime = make(map[string]int64)
 	f.shutdown = make(chan struct{})
+
+	// Register with global registry
+	if f.Path != "" {
+		proxyRegistry.Register(f.Path, f)
+	}
 
 	// Set defaults
 	if f.FailDuration == 0 {
@@ -164,7 +250,57 @@ func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 func (f *FailoverProxy) Cleanup() error {
 	close(f.shutdown)
 	f.wg.Wait()
+
+	// Unregister from global registry
+	if f.Path != "" {
+		proxyRegistry.Unregister(f.Path, f)
+	}
 	return nil
+}
+
+// GetUpstreamStatus returns the current status of all upstreams
+func (f *FailoverProxy) GetUpstreamStatus() []UpstreamStatus {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	var statuses []UpstreamStatus
+	for _, upstream := range f.Upstreams {
+		status := UpstreamStatus{
+			Host:        upstream,
+			HealthCheck: f.HealthChecks[upstream] != nil,
+		}
+
+		// Determine status
+		if healthy, exists := f.healthStatus[upstream]; exists {
+			if healthy {
+				status.Status = "UP"
+			} else {
+				status.Status = "UNHEALTHY"
+			}
+		} else if lastFail, failed := f.failureCache[upstream]; failed {
+			if time.Since(lastFail) < time.Duration(f.FailDuration) {
+				status.Status = "DOWN"
+				status.LastFailure = lastFail
+			} else {
+				status.Status = "UP"
+			}
+		} else {
+			status.Status = "UP"
+		}
+
+		// Add last check time if available
+		if checkTime, exists := f.lastCheckTime[upstream]; exists {
+			status.LastCheck = checkTime
+		}
+
+		// Add response time if available
+		if respTime, exists := f.responseTime[upstream]; exists {
+			status.ResponseTime = respTime
+		}
+
+		statuses = append(statuses, status)
+	}
+	return statuses
 }
 
 // runHealthCheck runs periodic health checks for an upstream
@@ -211,6 +347,7 @@ func (f *FailoverProxy) performHealthCheck(healthURL, upstreamURL string, hc *He
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(hc.Timeout))
 	defer cancel()
 
+	start := time.Now()
 	req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
 	if err != nil {
 		f.setHealthStatus(upstreamURL, false)
@@ -221,6 +358,16 @@ func (f *FailoverProxy) performHealthCheck(healthURL, upstreamURL string, hc *He
 	}
 
 	resp, err := client.Do(req)
+	elapsed := time.Since(start).Milliseconds()
+
+	// Update check time and response time
+	f.mu.Lock()
+	f.lastCheckTime[upstreamURL] = time.Now()
+	if err == nil {
+		f.responseTime[upstreamURL] = elapsed
+	}
+	f.mu.Unlock()
+
 	if err != nil {
 		f.setHealthStatus(upstreamURL, false)
 		f.logger.Debug("health check failed",
@@ -448,6 +595,22 @@ func parseFailoverProxy(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, er
 		HealthChecks:    make(map[string]*HealthCheck),
 	}
 
+	// Try to extract the path from the current context
+	if h.State != nil {
+		if segments := h.State["matcher_segments"]; segments != nil {
+			if segs, ok := segments.([]caddyhttp.MatcherSet); ok && len(segs) > 0 {
+				for _, matcherSet := range segs {
+					for _, matcher := range matcherSet {
+						if pathMatcher, ok := matcher.(caddyhttp.MatchPath); ok && len(pathMatcher) > 0 {
+							f.Path = string(pathMatcher[0])
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
 	// Parse directive arguments (upstream URLs)
 	for h.Next() {
 		f.Upstreams = h.RemainingArgs()
@@ -490,6 +653,13 @@ func parseFailoverProxy(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, er
 
 			case "insecure_skip_verify":
 				f.InsecureSkipVerify = true
+
+			case "status_path":
+				// Allow manual configuration of the path for status reporting
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				f.Path = h.Val()
 
 			case "header_up":
 				// Format: header_up <upstream_url> <header_name> <header_value>
@@ -610,10 +780,46 @@ func (f *FailoverProxy) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
+// FailoverStatusHandler provides an HTTP endpoint for status information
+type FailoverStatusHandler struct{}
+
+// CaddyModule returns the Caddy module information
+func (FailoverStatusHandler) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "http.handlers.failover_status",
+		New: func() caddy.Module { return new(FailoverStatusHandler) },
+	}
+}
+
+// ServeHTTP handles the status request
+func (h FailoverStatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return nil
+	}
+
+	status := proxyRegistry.GetStatus()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
+	return nil
+}
+
+// parseFailoverStatus parses the failover_status directive
+func parseFailoverStatus(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	for h.Next() {
+		if h.NextArg() {
+			return nil, h.ArgErr()
+		}
+	}
+	return FailoverStatusHandler{}, nil
+}
+
 // Interface guards
 var (
 	_ caddy.Provisioner           = (*FailoverProxy)(nil)
 	_ caddy.CleanerUpper          = (*FailoverProxy)(nil)
 	_ caddyhttp.MiddlewareHandler = (*FailoverProxy)(nil)
 	_ caddyfile.Unmarshaler       = (*FailoverProxy)(nil)
+	_ caddy.Module                = (*FailoverStatusHandler)(nil)
+	_ caddyhttp.MiddlewareHandler = (*FailoverStatusHandler)(nil)
 )

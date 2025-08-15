@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/ejlevin1/caddy-failover/compare/v1.5.0...v1.6.0) (2025-08-15)
+
+
+### Features
+
+* add active upstream tracking and improve path display in failover_status ([ce10a5b](https://github.com/ejlevin1/caddy-failover/commit/ce10a5b28d64bedd7d4085a199e3bb721daead2b))
+
 # [1.5.0](https://github.com/ejlevin1/caddy-failover/compare/v1.4.0...v1.5.0) (2025-08-15)
 
 

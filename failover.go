@@ -132,6 +132,12 @@ func (f *FailoverProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			continue
 		}
 
+		// Log which upstream we're trying
+		f.logger.Debug("attempting upstream",
+			zap.String("url", upstreamURL),
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path))
+
 		// Try this upstream
 		err := f.tryUpstream(w, r, upstreamURL)
 		if err == nil {
@@ -139,6 +145,11 @@ func (f *FailoverProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			f.mu.Lock()
 			delete(f.failureCache, upstreamURL)
 			f.mu.Unlock()
+
+			f.logger.Info("successfully proxied request",
+				zap.String("upstream", upstreamURL),
+				zap.String("method", r.Method),
+				zap.String("path", r.URL.Path))
 			return nil
 		}
 
@@ -153,6 +164,10 @@ func (f *FailoverProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	// All upstreams failed
+	f.logger.Error("all upstreams failed",
+		zap.String("method", r.Method),
+		zap.String("path", r.URL.Path),
+		zap.Int("upstream_count", len(f.Upstreams)))
 	http.Error(w, "All upstreams failed", http.StatusBadGateway)
 	return nil
 }
@@ -176,6 +191,10 @@ func (f *FailoverProxy) tryUpstream(w http.ResponseWriter, r *http.Request, upst
 		targetURL.Path = r.URL.Path
 	}
 	targetURL.RawQuery = r.URL.RawQuery
+
+	f.logger.Debug("proxying request",
+		zap.String("target_url", targetURL.String()),
+		zap.String("method", r.Method))
 
 	// Create new request
 	proxyReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL.String(), r.Body)

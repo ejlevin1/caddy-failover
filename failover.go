@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -164,9 +165,16 @@ func (f *FailoverProxy) tryUpstream(w http.ResponseWriter, r *http.Request, upst
 		return fmt.Errorf("invalid upstream URL: %w", err)
 	}
 
-	// Build target URL
+	// Build target URL preserving upstream base path
 	targetURL := *u
-	targetURL.Path = r.URL.Path
+	// Join the upstream base path with the request path
+	if u.Path != "" && u.Path != "/" {
+		// Remove trailing slash from base path to avoid double slashes
+		basePath := strings.TrimSuffix(u.Path, "/")
+		targetURL.Path = basePath + r.URL.Path
+	} else {
+		targetURL.Path = r.URL.Path
+	}
 	targetURL.RawQuery = r.URL.RawQuery
 
 	// Create new request
@@ -193,7 +201,16 @@ func (f *FailoverProxy) tryUpstream(w http.ResponseWriter, r *http.Request, upst
 	if clientIP, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		proxyReq.Header.Set("X-Forwarded-For", clientIP)
 	}
-	proxyReq.Header.Set("X-Forwarded-Proto", "https")
+	// Determine the original protocol (inbound request protocol)
+	proto := "http"
+	if r.TLS != nil {
+		proto = "https"
+	}
+	// Also check if there's already an X-Forwarded-Proto header from a previous proxy
+	if existingProto := r.Header.Get("X-Forwarded-Proto"); existingProto != "" {
+		proto = existingProto
+	}
+	proxyReq.Header.Set("X-Forwarded-Proto", proto)
 	proxyReq.Header.Set("X-Forwarded-Host", r.Host)
 
 	// Choose client based on scheme

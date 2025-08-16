@@ -1,5 +1,10 @@
 # Caddy Failover Plugin
 
+[![Test Plugin](https://github.com/ejlevin1/caddy-failover/actions/workflows/test.yml/badge.svg)](https://github.com/ejlevin1/caddy-failover/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/ejlevin1/caddy-failover/branch/main/graph/badge.svg)](https://codecov.io/gh/ejlevin1/caddy-failover)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ejlevin1/caddy-failover)](https://goreportcard.com/report/github.com/ejlevin1/caddy-failover)
+[![Go Reference](https://pkg.go.dev/badge/github.com/ejlevin1/caddy-failover.svg)](https://pkg.go.dev/github.com/ejlevin1/caddy-failover)
+
 A Caddy plugin that provides intelligent failover between multiple upstream servers with support for mixed HTTP/HTTPS schemes.
 
 ## Features

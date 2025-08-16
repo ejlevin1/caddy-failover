@@ -126,21 +126,23 @@ generate_coverage_report() {
         fi
     done
 
-    # Show per-file coverage with color coding
+    # Show per-file coverage with color coding (excluding test helpers)
     print_color $YELLOW "\n📄 File Coverage Details:"
     echo "-------------------------"
-    go tool cover -func=coverage.out | grep -v "total:" | while IFS=$'\t' read -r file func coverage; do
+    go tool cover -func=coverage.out | grep -v "total:" | grep -v "test_helpers.go" | while IFS=$'\t' read -r file func coverage; do
         if [[ ! -z "$coverage" && "$file" != "" ]]; then
             # Extract just the filename without path
             filename=$(basename "$file")
             cov_value=${coverage%\%}
 
             # Color code based on coverage
-            if (( $(echo "$cov_value >= 80" | bc -l) 2>/dev/null )); then
+            # Remove decimal for integer comparison
+            cov_int=${cov_value%.*}
+            if [[ "$cov_int" -ge 80 ]]; then
                 printf "  ${GREEN}%-40s %s${NC}\n" "$filename" "$coverage"
-            elif (( $(echo "$cov_value >= 60" | bc -l) 2>/dev/null )); then
+            elif [[ "$cov_int" -ge 60 ]]; then
                 printf "  ${YELLOW}%-40s %s${NC}\n" "$filename" "$coverage"
-            elif (( $(echo "$cov_value > 0" | bc -l) 2>/dev/null )); then
+            elif [[ "$cov_int" -gt 0 ]]; then
                 printf "  ${RED}%-40s %s${NC}\n" "$filename" "$coverage"
             else
                 printf "  ${RED}%-40s %s ⚠️${NC}\n" "$filename" "$coverage"
@@ -148,10 +150,10 @@ generate_coverage_report() {
         fi
     done | sort -t: -k2 -rn | head -20  # Show top 20 files by coverage
 
-    # Show uncovered functions
+    # Show uncovered functions (excluding test helpers)
     print_color $YELLOW "\n🔍 Functions with No Coverage:"
     echo "-------------------------------"
-    go tool cover -func=coverage.out | grep "0.0%" | while read -r line; do
+    go tool cover -func=coverage.out | grep "0.0%" | grep -v "test_helpers.go" | while read -r line; do
         file=$(echo "$line" | awk '{print $1}')
         func=$(echo "$line" | awk '{print $2}')
         filename=$(basename "$file")
@@ -176,9 +178,9 @@ generate_coverage_report() {
     # Generate coverage badge info
     print_color $YELLOW "\n🏷️  Coverage Badge Info:"
     echo "----------------------"
-    if (( $(echo "$COVERAGE_VALUE >= 80" | bc -l) )); then
+    if [[ "$COVERAGE_INT" -ge 80 ]]; then
         echo "Badge Color: Green (Excellent)"
-    elif (( $(echo "$COVERAGE_VALUE >= 60" | bc -l) )); then
+    elif [[ "$COVERAGE_INT" -ge 60 ]]; then
         echo "Badge Color: Yellow (Good)"
     else
         echo "Badge Color: Red (Needs Improvement)"
@@ -188,11 +190,11 @@ generate_coverage_report() {
     # Provide recommendations
     print_color $YELLOW "\n💡 Recommendations:"
     echo "-------------------"
-    if (( $(echo "$COVERAGE_VALUE < 60" | bc -l) )); then
+    if [[ "$COVERAGE_INT" -lt 60 ]]; then
         echo "• Consider adding more unit tests to improve coverage"
         echo "• Focus on testing critical business logic first"
         echo "• Run 'go test -coverprofile=coverage.out ./... && go tool cover -html=coverage.out'"
-    elif (( $(echo "$COVERAGE_VALUE < 80" | bc -l) )); then
+    elif [[ "$COVERAGE_INT" -lt 80 ]]; then
         echo "• Good coverage! Consider targeting 80% or higher"
         echo "• Review uncovered functions for testing opportunities"
     else

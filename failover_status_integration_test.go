@@ -271,6 +271,11 @@ func TestStatusEndpointWithMultipleProxies(t *testing.T) {
 
 // TestStatusEndpointConcurrentAccess tests that the status endpoint handles concurrent requests
 func TestStatusEndpointConcurrentAccess(t *testing.T) {
+	// Skip this test if running in short mode
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -281,11 +286,9 @@ func TestStatusEndpointConcurrentAccess(t *testing.T) {
 		{
 			order failover_proxy before reverse_proxy
 			order failover_status before respond
-			admin localhost:2995
-			http_port 9084
 		}
 
-		localhost:9084 {
+		localhost {
 			handle /api/* {
 				failover_proxy %s {
 					fail_duration 3s
@@ -306,7 +309,7 @@ func TestStatusEndpointConcurrentAccess(t *testing.T) {
 		go func(id int) {
 			defer func() { done <- true }()
 
-			req, _ := http.NewRequest("GET", "http://localhost:9084/status", nil)
+			req, _ := http.NewRequest("GET", "http://localhost/status", nil)
 			client := &http.Client{}
 			resp, err := client.Do(req)
 			if err != nil {

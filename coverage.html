@@ -1,0 +1,1334 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>caddy-failover: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+
+				<option value="file0">github.com/ejlevin1/caddy-failover/failover.go (58.2%)</option>
+
+				<option value="file1">github.com/ejlevin1/caddy-failover/test_helpers.go (21.4%)</option>
+
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+
+				<span class="cov0">no coverage</span>
+				<span class="cov1">low coverage</span>
+				<span class="cov2">*</span>
+				<span class="cov3">*</span>
+				<span class="cov4">*</span>
+				<span class="cov5">*</span>
+				<span class="cov6">*</span>
+				<span class="cov7">*</span>
+				<span class="cov8">*</span>
+				<span class="cov9">*</span>
+				<span class="cov10">high coverage</span>
+
+			</div>
+		</div>
+		<div id="content">
+
+		<pre class="file" id="file0" style="display: none">package caddyfailover
+
+import (
+        "context"
+        "crypto/tls"
+        "encoding/json"
+        "fmt"
+        "io"
+        "net"
+        "net/http"
+        "net/url"
+        "strings"
+        "sync"
+        "time"
+
+        "github.com/caddyserver/caddy/v2"
+        "github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+        "github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+        "github.com/caddyserver/caddy/v2/modules/caddyhttp"
+        "go.uber.org/zap"
+)
+
+func init() <span class="cov1" title="1">{
+        caddy.RegisterModule(&amp;FailoverProxy{})
+        caddy.RegisterModule(&amp;FailoverStatusHandler{})
+        httpcaddyfile.RegisterHandlerDirective("failover_proxy", parseFailoverProxy)
+        httpcaddyfile.RegisterHandlerDirective("failover_status", parseFailoverStatus)
+}</span>
+
+var (
+        // Global registry to track all failover proxy instances
+        proxyRegistry = &amp;ProxyRegistry{
+                proxies: make(map[string]*ProxyEntry),
+                order:   make([]string, 0),
+        }
+)
+
+// ProxyEntry represents a unique proxy configuration for a path
+type ProxyEntry struct {
+        Path      string
+        Proxy     *FailoverProxy
+        Upstreams map[string]bool // Track unique upstreams to prevent duplicates
+}
+
+// ProxyRegistry tracks all failover proxy instances for status reporting
+type ProxyRegistry struct {
+        mu      sync.RWMutex
+        proxies map[string]*ProxyEntry // path -&gt; proxy entry
+        order   []string               // maintains registration order
+}
+
+// Register adds a proxy to the registry
+func (r *ProxyRegistry) Register(path string, proxy *FailoverProxy) <span class="cov6" title="13">{
+        r.mu.Lock()
+        defer r.mu.Unlock()
+
+        // Check if this path already exists
+        if entry, exists := r.proxies[path]; exists </span><span class="cov2" title="2">{
+                // Merge upstreams if not already present
+                for _, upstream := range proxy.Upstreams </span><span class="cov3" title="4">{
+                        if !entry.Upstreams[upstream] </span><span class="cov1" title="1">{
+                                // This is a new upstream for this path, but we'll use the first proxy's configuration
+                                // to avoid duplicates. This ensures we don't duplicate the same upstream
+                                entry.Upstreams[upstream] = true
+                        }</span>
+                }
+        } else<span class="cov5" title="11"> {
+                // New path, create entry
+                entry := &amp;ProxyEntry{
+                        Path:      path,
+                        Proxy:     proxy,
+                        Upstreams: make(map[string]bool),
+                }
+                for _, upstream := range proxy.Upstreams </span><span class="cov6" title="14">{
+                        entry.Upstreams[upstream] = true
+                }</span>
+                <span class="cov5" title="11">r.proxies[path] = entry
+                r.order = append(r.order, path)</span>
+        }
+}
+
+// Unregister removes a proxy from the registry
+func (r *ProxyRegistry) Unregister(path string, proxy *FailoverProxy) <span class="cov1" title="1">{
+        r.mu.Lock()
+        defer r.mu.Unlock()
+
+        if entry, exists := r.proxies[path]; exists </span><span class="cov1" title="1">{
+                // Only remove if this is the same proxy instance
+                if entry.Proxy == proxy </span><span class="cov1" title="1">{
+                        delete(r.proxies, path)
+                        // Remove from order slice
+                        for i, p := range r.order </span><span class="cov1" title="1">{
+                                if p == path </span><span class="cov1" title="1">{
+                                        r.order = append(r.order[:i], r.order[i+1:]...)
+                                        break</span>
+                                }
+                        }
+                }
+        }
+}
+
+// GetStatus returns the status of all registered proxies
+func (r *ProxyRegistry) GetStatus() []PathStatus <span class="cov7" title="25">{
+        r.mu.RLock()
+        defer r.mu.RUnlock()
+
+        var status []PathStatus
+        // Use order to maintain consistent ordering
+        for _, path := range r.order </span><span class="cov9" title="86">{
+                entry, exists := r.proxies[path]
+                if !exists </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                // Use the clean path for display
+                <span class="cov9" title="86">displayPath := path
+                if entry.Proxy.HandlePath != "" </span><span class="cov9" title="85">{
+                        displayPath = entry.Proxy.HandlePath
+                }</span>
+
+                <span class="cov9" title="86">ps := PathStatus{
+                        Path:            displayPath,
+                        FailoverProxies: entry.Proxy.GetUpstreamStatus(),
+                }
+
+                // Get the active upstream
+                if active := entry.Proxy.GetActiveUpstream(); active != "" </span><span class="cov9" title="86">{
+                        ps.Active = active
+                }</span>
+
+                <span class="cov9" title="86">status = append(status, ps)</span>
+        }
+        <span class="cov7" title="25">return status</span>
+}
+
+// PathStatus represents the status of failover proxies for a path
+type PathStatus struct {
+        Path            string           `json:"path"`
+        Active          string           `json:"active,omitempty"`
+        FailoverProxies []UpstreamStatus `json:"failover_proxies"`
+}
+
+// UpstreamStatus represents the status of a single upstream
+type UpstreamStatus struct {
+        Host         string    `json:"host"`
+        Status       string    `json:"status"` // UP, DOWN, UNHEALTHY
+        LastCheck    time.Time `json:"last_check,omitempty"`
+        LastFailure  time.Time `json:"last_failure,omitempty"`
+        HealthCheck  bool      `json:"health_check_enabled"`
+        ResponseTime int64     `json:"response_time_ms,omitempty"`
+}
+
+// HealthCheck defines health check configuration for an upstream
+type HealthCheck struct {
+        // Path is the health check endpoint path
+        Path string `json:"path,omitempty"`
+
+        // Interval is how often to perform health checks (default 30s)
+        Interval caddy.Duration `json:"interval,omitempty"`
+
+        // Timeout is the timeout for health check requests (default 5s)
+        Timeout caddy.Duration `json:"timeout,omitempty"`
+
+        // ExpectedStatus is the expected HTTP status code (default 200)
+        ExpectedStatus int `json:"expected_status,omitempty"`
+}
+
+// FailoverProxy is a Caddy HTTP handler that tries multiple upstream servers
+// in sequence until one succeeds, supporting mixed HTTP/HTTPS schemes
+type FailoverProxy struct {
+        // Upstreams is the list of upstream URLs to try in order
+        Upstreams []string `json:"upstreams,omitempty"`
+
+        // UpstreamHeaders is a map of upstream URL to headers
+        UpstreamHeaders map[string]map[string]string `json:"upstream_headers,omitempty"`
+
+        // HealthChecks is a map of upstream URL to health check configuration
+        HealthChecks map[string]*HealthCheck `json:"health_checks,omitempty"`
+
+        // InsecureSkipVerify allows skipping TLS verification for HTTPS upstreams
+        InsecureSkipVerify bool `json:"insecure_skip_verify,omitempty"`
+
+        // FailDuration is how long to remember a failed upstream (default 30s)
+        FailDuration caddy.Duration `json:"fail_duration,omitempty"`
+
+        // DialTimeout is the timeout for establishing connection (default 2s)
+        DialTimeout caddy.Duration `json:"dial_timeout,omitempty"`
+
+        // ResponseTimeout is the timeout for receiving response (default 5s)
+        ResponseTimeout caddy.Duration `json:"response_timeout,omitempty"`
+
+        // Path is the route path this proxy handles (for status reporting)
+        Path string `json:"path,omitempty"`
+
+        // HandlePath is the actual handle block path (e.g., /auth/*)
+        HandlePath string `json:"handle_path,omitempty"`
+
+        logger        *zap.Logger
+        replacer      *caddy.Replacer
+        httpClient    *http.Client
+        httpsClient   *http.Client
+        failureCache  map[string]time.Time
+        healthStatus  map[string]bool // true = healthy, false = unhealthy
+        lastCheckTime map[string]time.Time
+        responseTime  map[string]int64 // response time in milliseconds
+        mu            sync.RWMutex
+        shutdown      chan struct{}
+        wg            sync.WaitGroup
+}
+
+// CaddyModule returns the Caddy module information
+func (*FailoverProxy) CaddyModule() caddy.ModuleInfo <span class="cov1" title="1">{
+        return caddy.ModuleInfo{
+                ID:  "http.handlers.failover_proxy",
+                New: func() caddy.Module </span><span class="cov1" title="1">{ return new(FailoverProxy) }</span>,
+        }
+}
+
+// Provision sets up the handler
+func (f *FailoverProxy) Provision(ctx caddy.Context) error <span class="cov5" title="11">{
+        f.logger = ctx.Logger(f)
+        f.replacer = caddy.NewReplacer()
+        f.failureCache = make(map[string]time.Time)
+        f.healthStatus = make(map[string]bool)
+        f.lastCheckTime = make(map[string]time.Time)
+        f.responseTime = make(map[string]int64)
+        f.shutdown = make(chan struct{})
+
+        // Register with global registry
+        // Use Path if explicitly set, otherwise use HandlePath
+        registrationPath := f.Path
+        if registrationPath == "" &amp;&amp; f.HandlePath != "" </span><span class="cov0" title="0">{
+                registrationPath = f.HandlePath
+        }</span>
+        // Only register if we have a valid path
+        <span class="cov5" title="11">if registrationPath != "" </span><span class="cov0" title="0">{
+                proxyRegistry.Register(registrationPath, f)
+        }</span>
+
+        // Set defaults
+        <span class="cov5" title="11">if f.FailDuration == 0 </span><span class="cov0" title="0">{
+                f.FailDuration = caddy.Duration(30 * time.Second)
+        }</span>
+        <span class="cov5" title="11">if f.DialTimeout == 0 </span><span class="cov0" title="0">{
+                f.DialTimeout = caddy.Duration(2 * time.Second)
+        }</span>
+        <span class="cov5" title="11">if f.ResponseTimeout == 0 </span><span class="cov0" title="0">{
+                f.ResponseTimeout = caddy.Duration(5 * time.Second)
+        }</span>
+
+        // Expand environment variables in upstream URLs
+        <span class="cov5" title="11">for i, upstream := range f.Upstreams </span><span class="cov6" title="14">{
+                expanded := f.replacer.ReplaceAll(upstream, "")
+                if expanded != upstream </span><span class="cov0" title="0">{
+                        f.logger.Debug("expanded upstream URL",
+                                zap.String("original", upstream),
+                                zap.String("expanded", expanded))
+                }</span>
+                <span class="cov6" title="14">f.Upstreams[i] = expanded</span>
+        }
+
+        // Expand environment variables in upstream headers
+        <span class="cov5" title="11">expandedHeaders := make(map[string]map[string]string)
+        for upstream, headers := range f.UpstreamHeaders </span><span class="cov1" title="1">{
+                expandedUpstream := f.replacer.ReplaceAll(upstream, "")
+                if expandedUpstream != upstream </span><span class="cov0" title="0">{
+                        f.logger.Debug("expanded upstream in header_up",
+                                zap.String("original", upstream),
+                                zap.String("expanded", expandedUpstream))
+                }</span>
+                <span class="cov1" title="1">expandedHeaders[expandedUpstream] = make(map[string]string)
+                for name, value := range headers </span><span class="cov2" title="2">{
+                        expandedValue := f.replacer.ReplaceAll(value, "")
+                        if expandedValue != value </span><span class="cov0" title="0">{
+                                f.logger.Debug("expanded header value",
+                                        zap.String("upstream", expandedUpstream),
+                                        zap.String("header", name),
+                                        zap.String("original", value),
+                                        zap.String("expanded", expandedValue))
+                        }</span>
+                        <span class="cov2" title="2">expandedHeaders[expandedUpstream][name] = expandedValue</span>
+                }
+        }
+        <span class="cov5" title="11">f.UpstreamHeaders = expandedHeaders
+
+        // Expand environment variables in health check URLs
+        expandedHealthChecks := make(map[string]*HealthCheck)
+        for upstream, hc := range f.HealthChecks </span><span class="cov0" title="0">{
+                expandedUpstream := f.replacer.ReplaceAll(upstream, "")
+                if expandedUpstream != upstream </span><span class="cov0" title="0">{
+                        f.logger.Debug("expanded upstream in health_check",
+                                zap.String("original", upstream),
+                                zap.String("expanded", expandedUpstream))
+                }</span>
+                <span class="cov0" title="0">expandedHealthChecks[expandedUpstream] = hc</span>
+        }
+        <span class="cov5" title="11">f.HealthChecks = expandedHealthChecks
+
+        // Set health check defaults and start health checkers
+        for upstream, hc := range f.HealthChecks </span><span class="cov0" title="0">{
+                if hc.Interval == 0 </span><span class="cov0" title="0">{
+                        hc.Interval = caddy.Duration(30 * time.Second)
+                }</span>
+                <span class="cov0" title="0">if hc.Timeout == 0 </span><span class="cov0" title="0">{
+                        hc.Timeout = caddy.Duration(5 * time.Second)
+                }</span>
+                <span class="cov0" title="0">if hc.ExpectedStatus == 0 </span><span class="cov0" title="0">{
+                        hc.ExpectedStatus = 200
+                }</span>
+                <span class="cov0" title="0">if hc.Path == "" </span><span class="cov0" title="0">{
+                        hc.Path = "/health"
+                }</span>
+
+                // Start health check goroutine for this upstream
+                <span class="cov0" title="0">f.wg.Add(1)
+                go f.runHealthCheck(upstream, hc)</span>
+        }
+
+        // Create HTTP transport
+        <span class="cov5" title="11">httpTransport := &amp;http.Transport{
+                DialContext: (&amp;net.Dialer{
+                        Timeout: time.Duration(f.DialTimeout),
+                }).DialContext,
+                ResponseHeaderTimeout: time.Duration(f.ResponseTimeout),
+                MaxIdleConns:          100,
+                IdleConnTimeout:       90 * time.Second,
+        }
+
+        // Create HTTPS transport
+        httpsTransport := &amp;http.Transport{
+                DialContext: (&amp;net.Dialer{
+                        Timeout: time.Duration(f.DialTimeout),
+                }).DialContext,
+                ResponseHeaderTimeout: time.Duration(f.ResponseTimeout),
+                MaxIdleConns:          100,
+                IdleConnTimeout:       90 * time.Second,
+                TLSClientConfig: &amp;tls.Config{
+                        InsecureSkipVerify: f.InsecureSkipVerify,
+                },
+        }
+
+        // Create clients
+        f.httpClient = &amp;http.Client{
+                Transport: httpTransport,
+                CheckRedirect: func(req *http.Request, via []*http.Request) error </span><span class="cov0" title="0">{
+                        return http.ErrUseLastResponse
+                }</span>,
+        }
+
+        <span class="cov5" title="11">f.httpsClient = &amp;http.Client{
+                Transport: httpsTransport,
+                CheckRedirect: func(req *http.Request, via []*http.Request) error </span><span class="cov0" title="0">{
+                        return http.ErrUseLastResponse
+                }</span>,
+        }
+
+        <span class="cov5" title="11">return nil</span>
+}
+
+// Cleanup stops health check goroutines
+func (f *FailoverProxy) Cleanup() error <span class="cov5" title="11">{
+        close(f.shutdown)
+        f.wg.Wait()
+
+        // Unregister from global registry
+        registrationPath := f.Path
+        if registrationPath == "" &amp;&amp; f.HandlePath != "" </span><span class="cov0" title="0">{
+                registrationPath = f.HandlePath
+        }</span>
+        <span class="cov5" title="11">if registrationPath != "" </span><span class="cov0" title="0">{
+                proxyRegistry.Unregister(registrationPath, f)
+        }</span>
+        <span class="cov5" title="11">return nil</span>
+}
+
+// GetActiveUpstream returns the currently active (healthy and not failed) upstream
+func (f *FailoverProxy) GetActiveUpstream() string <span class="cov9" title="86">{
+        f.mu.RLock()
+        defer f.mu.RUnlock()
+
+        // Find the first healthy upstream that isn't in failure state
+        for _, upstream := range f.Upstreams </span><span class="cov9" title="86">{
+                // Check if upstream is healthy
+                if hc := f.HealthChecks[upstream]; hc != nil </span><span class="cov0" title="0">{
+                        if healthy, exists := f.healthStatus[upstream]; exists &amp;&amp; !healthy </span><span class="cov0" title="0">{
+                                continue</span> // Skip unhealthy upstreams
+                        }
+                }
+
+                // Check if upstream is in failure state
+                <span class="cov9" title="86">if lastFail, failed := f.failureCache[upstream]; failed </span><span class="cov0" title="0">{
+                        if time.Since(lastFail) &lt; time.Duration(f.FailDuration) </span><span class="cov0" title="0">{
+                                continue</span> // Skip failed upstreams
+                        }
+                }
+
+                // This upstream is active
+                <span class="cov9" title="86">return upstream</span>
+        }
+
+        // If no healthy upstreams, return the first one as fallback
+        <span class="cov0" title="0">if len(f.Upstreams) &gt; 0 </span><span class="cov0" title="0">{
+                return f.Upstreams[0]
+        }</span>
+        <span class="cov0" title="0">return ""</span>
+}
+
+// GetUpstreamStatus returns the current status of all upstreams
+func (f *FailoverProxy) GetUpstreamStatus() []UpstreamStatus <span class="cov9" title="86">{
+        f.mu.RLock()
+        defer f.mu.RUnlock()
+
+        var statuses []UpstreamStatus
+        for _, upstream := range f.Upstreams </span><span class="cov10" title="88">{
+                status := UpstreamStatus{
+                        Host:        upstream,
+                        HealthCheck: f.HealthChecks[upstream] != nil,
+                }
+
+                // Determine status
+                if healthy, exists := f.healthStatus[upstream]; exists </span><span class="cov0" title="0">{
+                        if healthy </span><span class="cov0" title="0">{
+                                status.Status = "UP"
+                        }</span> else<span class="cov0" title="0"> {
+                                status.Status = "UNHEALTHY"
+                        }</span>
+                } else<span class="cov10" title="88"> if lastFail, failed := f.failureCache[upstream]; failed </span><span class="cov0" title="0">{
+                        if time.Since(lastFail) &lt; time.Duration(f.FailDuration) </span><span class="cov0" title="0">{
+                                status.Status = "DOWN"
+                                status.LastFailure = lastFail
+                        }</span> else<span class="cov0" title="0"> {
+                                status.Status = "UP"
+                        }</span>
+                } else<span class="cov10" title="88"> {
+                        status.Status = "UP"
+                }</span>
+
+                // Add last check time if available
+                <span class="cov10" title="88">if checkTime, exists := f.lastCheckTime[upstream]; exists </span><span class="cov0" title="0">{
+                        status.LastCheck = checkTime
+                }</span>
+
+                // Add response time if available
+                <span class="cov10" title="88">if respTime, exists := f.responseTime[upstream]; exists </span><span class="cov0" title="0">{
+                        status.ResponseTime = respTime
+                }</span>
+
+                <span class="cov10" title="88">statuses = append(statuses, status)</span>
+        }
+        <span class="cov9" title="86">return statuses</span>
+}
+
+// runHealthCheck runs periodic health checks for an upstream
+func (f *FailoverProxy) runHealthCheck(upstreamURL string, hc *HealthCheck) <span class="cov0" title="0">{
+        defer f.wg.Done()
+
+        u, err := url.Parse(upstreamURL)
+        if err != nil </span><span class="cov0" title="0">{
+                f.logger.Error("invalid upstream URL for health check",
+                        zap.String("upstream", upstreamURL),
+                        zap.Error(err))
+                return
+        }</span>
+
+        // Build health check URL
+        <span class="cov0" title="0">healthURL := *u
+        healthURL.Path = hc.Path
+        healthURL.RawQuery = ""
+
+        ticker := time.NewTicker(time.Duration(hc.Interval))
+        defer ticker.Stop()
+
+        // Perform initial health check
+        f.performHealthCheck(healthURL.String(), upstreamURL, hc)
+
+        for </span><span class="cov0" title="0">{
+                select </span>{
+                case &lt;-ticker.C:<span class="cov0" title="0">
+                        f.performHealthCheck(healthURL.String(), upstreamURL, hc)</span>
+                case &lt;-f.shutdown:<span class="cov0" title="0">
+                        return</span>
+                }
+        }
+}
+
+// performHealthCheck performs a single health check
+func (f *FailoverProxy) performHealthCheck(healthURL, upstreamURL string, hc *HealthCheck) <span class="cov2" title="2">{
+        u, _ := url.Parse(healthURL)
+        client := f.httpClient
+        if u.Scheme == "https" </span><span class="cov0" title="0">{
+                client = f.httpsClient
+        }</span>
+
+        <span class="cov2" title="2">ctx, cancel := context.WithTimeout(context.Background(), time.Duration(hc.Timeout))
+        defer cancel()
+
+        start := time.Now()
+        req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
+        if err != nil </span><span class="cov0" title="0">{
+                f.setHealthStatus(upstreamURL, false)
+                f.logger.Debug("health check failed to create request",
+                        zap.String("upstream", upstreamURL),
+                        zap.Error(err))
+                return
+        }</span>
+
+        // Set custom user agent for health checks
+        <span class="cov2" title="2">req.Header.Set("User-Agent", "Caddy-failover-health-check/1.0")
+
+        resp, err := client.Do(req)
+        elapsed := time.Since(start).Milliseconds()
+
+        // Update check time and response time
+        f.mu.Lock()
+        f.lastCheckTime[upstreamURL] = time.Now()
+        if err == nil </span><span class="cov2" title="2">{
+                f.responseTime[upstreamURL] = elapsed
+        }</span>
+        <span class="cov2" title="2">f.mu.Unlock()
+
+        if err != nil </span><span class="cov0" title="0">{
+                f.setHealthStatus(upstreamURL, false)
+                f.logger.Debug("health check failed",
+                        zap.String("upstream", upstreamURL),
+                        zap.Error(err))
+                return
+        }</span>
+        <span class="cov2" title="2">defer resp.Body.Close()
+
+        // Drain the body to allow connection reuse
+        io.Copy(io.Discard, resp.Body)
+
+        healthy := resp.StatusCode == hc.ExpectedStatus
+        f.setHealthStatus(upstreamURL, healthy)
+
+        if healthy </span><span class="cov1" title="1">{
+                f.logger.Debug("health check passed",
+                        zap.String("upstream", upstreamURL),
+                        zap.Int("status", resp.StatusCode))
+        }</span> else<span class="cov1" title="1"> {
+                f.logger.Warn("health check failed",
+                        zap.String("upstream", upstreamURL),
+                        zap.Int("status", resp.StatusCode),
+                        zap.Int("expected", hc.ExpectedStatus))
+        }</span>
+}
+
+// setHealthStatus updates the health status of an upstream
+func (f *FailoverProxy) setHealthStatus(upstreamURL string, healthy bool) <span class="cov2" title="2">{
+        f.mu.Lock()
+        defer f.mu.Unlock()
+
+        prevStatus, exists := f.healthStatus[upstreamURL]
+        f.healthStatus[upstreamURL] = healthy
+
+        // Log status changes
+        if !exists || prevStatus != healthy </span><span class="cov2" title="2">{
+                if healthy </span><span class="cov1" title="1">{
+                        // Clear failure cache when upstream becomes healthy
+                        delete(f.failureCache, upstreamURL)
+                        f.logger.Info("upstream became healthy",
+                                zap.String("upstream", upstreamURL))
+                }</span> else<span class="cov1" title="1"> {
+                        f.logger.Warn("upstream became unhealthy",
+                                zap.String("upstream", upstreamURL))
+                }</span>
+        }
+}
+
+// isHealthy checks if an upstream is healthy
+func (f *FailoverProxy) isHealthy(upstreamURL string) bool <span class="cov7" title="27">{
+        f.mu.RLock()
+        defer f.mu.RUnlock()
+
+        // If no health check is configured, consider it healthy
+        if _, hasHealthCheck := f.HealthChecks[upstreamURL]; !hasHealthCheck </span><span class="cov7" title="25">{
+                return true
+        }</span>
+
+        // Return health status (default to unhealthy if not yet checked)
+        <span class="cov2" title="2">healthy, exists := f.healthStatus[upstreamURL]
+        return exists &amp;&amp; healthy</span>
+}
+
+// ServeHTTP handles the HTTP request
+func (f *FailoverProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error <span class="cov7" title="22">{
+        // Track the index of the upstream we're trying
+        attemptedUpstreams := 0
+
+        // Try each upstream in order
+        for i, upstreamURL := range f.Upstreams </span><span class="cov7" title="25">{
+                // Check if upstream is healthy
+                if !f.isHealthy(upstreamURL) </span><span class="cov0" title="0">{
+                        f.logger.Debug("skipping unhealthy upstream",
+                                zap.String("url", upstreamURL))
+                        attemptedUpstreams++
+                        continue</span>
+                }
+
+                // Check if upstream is in failure state
+                <span class="cov7" title="25">f.mu.RLock()
+                lastFail, failed := f.failureCache[upstreamURL]
+                f.mu.RUnlock()
+
+                if failed &amp;&amp; time.Since(lastFail) &lt; time.Duration(f.FailDuration) </span><span class="cov1" title="1">{
+                        f.logger.Debug("skipping failed upstream",
+                                zap.String("url", upstreamURL),
+                                zap.Duration("remaining", time.Duration(f.FailDuration)-time.Since(lastFail)))
+                        attemptedUpstreams++
+                        continue</span>
+                }
+
+                // Log failover warning if we're not using the primary upstream
+                <span class="cov7" title="24">if attemptedUpstreams &gt; 0 </span><span class="cov3" title="3">{
+                        f.logger.Warn("failing over to alternate upstream",
+                                zap.String("primary", f.Upstreams[0]),
+                                zap.String("failover_to", upstreamURL),
+                                zap.Int("upstream_index", i),
+                                zap.String("method", r.Method),
+                                zap.String("path", r.URL.Path))
+                }</span>
+
+                // Log which upstream we're trying
+                <span class="cov7" title="24">f.logger.Debug("attempting upstream",
+                        zap.String("url", upstreamURL),
+                        zap.String("method", r.Method),
+                        zap.String("path", r.URL.Path))
+
+                // Try this upstream
+                err := f.tryUpstream(w, r, upstreamURL)
+                if err == nil </span><span class="cov7" title="20">{
+                        // Success! Clear failure cache for this upstream
+                        f.mu.Lock()
+                        delete(f.failureCache, upstreamURL)
+                        f.mu.Unlock()
+
+                        f.logger.Info("successfully proxied request",
+                                zap.String("upstream", upstreamURL),
+                                zap.String("method", r.Method),
+                                zap.String("path", r.URL.Path))
+                        return nil
+                }</span>
+
+                // Mark failure
+                <span class="cov3" title="4">f.mu.Lock()
+                f.failureCache[upstreamURL] = time.Now()
+                f.mu.Unlock()
+
+                f.logger.Warn("upstream failed, trying next",
+                        zap.String("url", upstreamURL),
+                        zap.Error(err))
+                attemptedUpstreams++</span>
+        }
+
+        // All upstreams failed
+        <span class="cov2" title="2">f.logger.Error("all upstreams failed",
+                zap.String("method", r.Method),
+                zap.String("path", r.URL.Path),
+                zap.Int("upstream_count", len(f.Upstreams)))
+        http.Error(w, "All upstreams failed", http.StatusBadGateway)
+        return nil</span>
+}
+
+// tryUpstream attempts to proxy the request to a single upstream
+func (f *FailoverProxy) tryUpstream(w http.ResponseWriter, r *http.Request, upstreamURL string) error <span class="cov7" title="24">{
+        // Parse upstream URL
+        u, err := url.Parse(upstreamURL)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("invalid upstream URL: %w", err)
+        }</span>
+
+        // Build target URL preserving upstream base path
+        <span class="cov7" title="24">targetURL := *u
+        // Join the upstream base path with the request path
+        if u.Path != "" &amp;&amp; u.Path != "/" </span><span class="cov2" title="2">{
+                // Remove trailing slash from base path to avoid double slashes
+                basePath := strings.TrimSuffix(u.Path, "/")
+                targetURL.Path = basePath + r.URL.Path
+        }</span> else<span class="cov7" title="22"> {
+                targetURL.Path = r.URL.Path
+        }</span>
+        <span class="cov7" title="24">targetURL.RawQuery = r.URL.RawQuery
+
+        f.logger.Debug("proxying request",
+                zap.String("target_url", targetURL.String()),
+                zap.String("method", r.Method))
+
+        // Create new request
+        proxyReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL.String(), r.Body)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to create request: %w", err)
+        }</span>
+
+        // Copy headers from original request
+        <span class="cov7" title="24">for name, values := range r.Header </span><span class="cov2" title="2">{
+                for _, value := range values </span><span class="cov2" title="2">{
+                        proxyReq.Header.Add(name, value)
+                }</span>
+        }
+
+        // Add upstream-specific headers
+        <span class="cov7" title="24">if headers, ok := f.UpstreamHeaders[upstreamURL]; ok </span><span class="cov1" title="1">{
+                for name, value := range headers </span><span class="cov2" title="2">{
+                        proxyReq.Header.Set(name, value)
+                }</span>
+        }
+
+        // Set X-Forwarded headers
+        <span class="cov7" title="24">if clientIP, _, err := net.SplitHostPort(r.RemoteAddr); err == nil </span><span class="cov7" title="24">{
+                proxyReq.Header.Set("X-Forwarded-For", clientIP)
+        }</span>
+        // Determine the original protocol (inbound request protocol)
+        <span class="cov7" title="24">proto := "http"
+        if r.TLS != nil </span><span class="cov1" title="1">{
+                proto = "https"
+        }</span>
+        // Also check if there's already an X-Forwarded-Proto header from a previous proxy
+        <span class="cov7" title="24">if existingProto := r.Header.Get("X-Forwarded-Proto"); existingProto != "" </span><span class="cov0" title="0">{
+                proto = existingProto
+        }</span>
+        <span class="cov7" title="24">proxyReq.Header.Set("X-Forwarded-Proto", proto)
+        proxyReq.Header.Set("X-Forwarded-Host", r.Host)
+
+        // Choose client based on scheme
+        client := f.httpClient
+        if u.Scheme == "https" </span><span class="cov0" title="0">{
+                client = f.httpsClient
+        }</span>
+
+        // Send request
+        <span class="cov7" title="24">resp, err := client.Do(proxyReq)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("upstream request failed: %w", err)
+        }</span>
+        <span class="cov7" title="24">defer resp.Body.Close()
+
+        // Check if response indicates failure (5xx errors)
+        if resp.StatusCode &gt;= 500 </span><span class="cov3" title="4">{
+                return fmt.Errorf("upstream returned %d", resp.StatusCode)
+        }</span>
+
+        // Copy response headers
+        <span class="cov7" title="20">for name, values := range resp.Header </span><span class="cov9" title="56">{
+                for _, value := range values </span><span class="cov9" title="56">{
+                        w.Header().Add(name, value)
+                }</span>
+        }
+
+        // Write status code
+        <span class="cov7" title="20">w.WriteHeader(resp.StatusCode)
+
+        // Copy response body
+        _, err = io.Copy(w, resp.Body)
+        return err</span>
+}
+
+// parseFailoverProxy parses the Caddyfile configuration
+func parseFailoverProxy(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) <span class="cov0" title="0">{
+        f := &amp;FailoverProxy{
+                UpstreamHeaders: make(map[string]map[string]string),
+                HealthChecks:    make(map[string]*HealthCheck),
+        }
+
+        // Try to extract the path from the current context
+        // This is important for status tracking - without a path, the proxy won't be registered
+        if h.State != nil </span><span class="cov0" title="0">{
+                if segments := h.State["matcher_segments"]; segments != nil </span><span class="cov0" title="0">{
+                        if segs, ok := segments.([]caddyhttp.MatcherSet); ok &amp;&amp; len(segs) &gt; 0 </span><span class="cov0" title="0">{
+                                for _, matcherSet := range segs </span><span class="cov0" title="0">{
+                                        for _, matcher := range matcherSet </span><span class="cov0" title="0">{
+                                                if pathMatcher, ok := matcher.(caddyhttp.MatchPath); ok &amp;&amp; len(pathMatcher) &gt; 0 </span><span class="cov0" title="0">{
+                                                        f.HandlePath = string(pathMatcher[0])
+                                                        // Also set Path as default if not explicitly overridden later
+                                                        f.Path = f.HandlePath
+                                                        break</span>
+                                                }
+                                        }
+                                }
+                        }
+                }
+        }
+
+        // Parse directive arguments (upstream URLs)
+        <span class="cov0" title="0">for h.Next() </span><span class="cov0" title="0">{
+                f.Upstreams = h.RemainingArgs()
+                if len(f.Upstreams) == 0 </span><span class="cov0" title="0">{
+                        return nil, h.Err("at least one upstream URL is required")
+                }</span>
+
+                // Parse block for additional options
+                <span class="cov0" title="0">for h.NextBlock(0) </span><span class="cov0" title="0">{
+                        switch h.Val() </span>{
+                        case "fail_duration":<span class="cov0" title="0">
+                                if !h.NextArg() </span><span class="cov0" title="0">{
+                                        return nil, h.ArgErr()
+                                }</span>
+                                <span class="cov0" title="0">dur, err := caddy.ParseDuration(h.Val())
+                                if err != nil </span><span class="cov0" title="0">{
+                                        return nil, h.Errf("invalid fail_duration: %v", err)
+                                }</span>
+                                <span class="cov0" title="0">f.FailDuration = caddy.Duration(dur)</span>
+
+                        case "dial_timeout":<span class="cov0" title="0">
+                                if !h.NextArg() </span><span class="cov0" title="0">{
+                                        return nil, h.ArgErr()
+                                }</span>
+                                <span class="cov0" title="0">dur, err := caddy.ParseDuration(h.Val())
+                                if err != nil </span><span class="cov0" title="0">{
+                                        return nil, h.Errf("invalid dial_timeout: %v", err)
+                                }</span>
+                                <span class="cov0" title="0">f.DialTimeout = caddy.Duration(dur)</span>
+
+                        case "response_timeout":<span class="cov0" title="0">
+                                if !h.NextArg() </span><span class="cov0" title="0">{
+                                        return nil, h.ArgErr()
+                                }</span>
+                                <span class="cov0" title="0">dur, err := caddy.ParseDuration(h.Val())
+                                if err != nil </span><span class="cov0" title="0">{
+                                        return nil, h.Errf("invalid response_timeout: %v", err)
+                                }</span>
+                                <span class="cov0" title="0">f.ResponseTimeout = caddy.Duration(dur)</span>
+
+                        case "insecure_skip_verify":<span class="cov0" title="0">
+                                f.InsecureSkipVerify = true</span>
+
+                        case "status_path":<span class="cov0" title="0">
+                                // Allow manual configuration of the path for status reporting
+                                // This overrides the registration key but preserves HandlePath for display
+                                if !h.NextArg() </span><span class="cov0" title="0">{
+                                        return nil, h.ArgErr()
+                                }</span>
+                                <span class="cov0" title="0">f.Path = h.Val()</span>
+
+                        case "header_up":<span class="cov0" title="0">
+                                // Format: header_up &lt;upstream_url&gt; &lt;header_name&gt; &lt;header_value&gt;
+                                if !h.NextArg() </span><span class="cov0" title="0">{
+                                        return nil, h.ArgErr()
+                                }</span>
+                                <span class="cov0" title="0">upstreamURL := h.Val()
+
+                                if !h.NextArg() </span><span class="cov0" title="0">{
+                                        return nil, h.ArgErr()
+                                }</span>
+                                <span class="cov0" title="0">headerName := h.Val()
+
+                                if !h.NextArg() </span><span class="cov0" title="0">{
+                                        return nil, h.ArgErr()
+                                }</span>
+                                <span class="cov0" title="0">headerValue := h.Val()
+
+                                // Initialize map if needed
+                                if f.UpstreamHeaders[upstreamURL] == nil </span><span class="cov0" title="0">{
+                                        f.UpstreamHeaders[upstreamURL] = make(map[string]string)
+                                }</span>
+                                <span class="cov0" title="0">f.UpstreamHeaders[upstreamURL][headerName] = headerValue</span>
+
+                        case "health_check":<span class="cov0" title="0">
+                                // Format: health_check &lt;upstream_url&gt; { ... }
+                                if !h.NextArg() </span><span class="cov0" title="0">{
+                                        return nil, h.ArgErr()
+                                }</span>
+                                <span class="cov0" title="0">upstreamURL := h.Val()
+
+                                hc := &amp;HealthCheck{}
+
+                                // Parse nested block for health check options
+                                for h.NextBlock(1) </span><span class="cov0" title="0">{
+                                        switch h.Val() </span>{
+                                        case "path":<span class="cov0" title="0">
+                                                if !h.NextArg() </span><span class="cov0" title="0">{
+                                                        return nil, h.ArgErr()
+                                                }</span>
+                                                <span class="cov0" title="0">hc.Path = h.Val()</span>
+
+                                        case "interval":<span class="cov0" title="0">
+                                                if !h.NextArg() </span><span class="cov0" title="0">{
+                                                        return nil, h.ArgErr()
+                                                }</span>
+                                                <span class="cov0" title="0">dur, err := caddy.ParseDuration(h.Val())
+                                                if err != nil </span><span class="cov0" title="0">{
+                                                        return nil, h.Errf("invalid health check interval: %v", err)
+                                                }</span>
+                                                <span class="cov0" title="0">hc.Interval = caddy.Duration(dur)</span>
+
+                                        case "timeout":<span class="cov0" title="0">
+                                                if !h.NextArg() </span><span class="cov0" title="0">{
+                                                        return nil, h.ArgErr()
+                                                }</span>
+                                                <span class="cov0" title="0">dur, err := caddy.ParseDuration(h.Val())
+                                                if err != nil </span><span class="cov0" title="0">{
+                                                        return nil, h.Errf("invalid health check timeout: %v", err)
+                                                }</span>
+                                                <span class="cov0" title="0">hc.Timeout = caddy.Duration(dur)</span>
+
+                                        case "expected_status":<span class="cov0" title="0">
+                                                if !h.NextArg() </span><span class="cov0" title="0">{
+                                                        return nil, h.ArgErr()
+                                                }</span>
+                                                <span class="cov0" title="0">var status int
+                                                _, err := fmt.Sscanf(h.Val(), "%d", &amp;status)
+                                                if err != nil </span><span class="cov0" title="0">{
+                                                        return nil, h.Errf("invalid expected_status: %v", err)
+                                                }</span>
+                                                <span class="cov0" title="0">hc.ExpectedStatus = status</span>
+
+                                        default:<span class="cov0" title="0">
+                                                return nil, h.Errf("unknown health_check subdirective: %s", h.Val())</span>
+                                        }
+                                }
+
+                                <span class="cov0" title="0">f.HealthChecks[upstreamURL] = hc</span>
+
+                        default:<span class="cov0" title="0">
+                                return nil, h.Errf("unknown subdirective: %s", h.Val())</span>
+                        }
+                }
+        }
+
+        <span class="cov0" title="0">return f, nil</span>
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler
+func (f *FailoverProxy) UnmarshalCaddyfile(d *caddyfile.Dispenser) error <span class="cov2" title="2">{
+        for d.Next() </span><span class="cov2" title="2">{
+                f.Upstreams = d.RemainingArgs()
+                if len(f.Upstreams) == 0 </span><span class="cov1" title="1">{
+                        return d.Err("at least one upstream URL is required")
+                }</span>
+
+                <span class="cov1" title="1">for d.NextBlock(0) </span><span class="cov2" title="2">{
+                        switch d.Val() </span>{
+                        case "fail_duration":<span class="cov1" title="1">
+                                if !d.NextArg() </span><span class="cov0" title="0">{
+                                        return d.ArgErr()
+                                }</span>
+                                <span class="cov1" title="1">dur, err := caddy.ParseDuration(d.Val())
+                                if err != nil </span><span class="cov0" title="0">{
+                                        return d.Errf("invalid fail_duration: %v", err)
+                                }</span>
+                                <span class="cov1" title="1">f.FailDuration = caddy.Duration(dur)</span>
+
+                        case "insecure_skip_verify":<span class="cov1" title="1">
+                                f.InsecureSkipVerify = true</span>
+
+                        default:<span class="cov0" title="0">
+                                return d.Errf("unknown subdirective: %s", d.Val())</span>
+                        }
+                }
+        }
+        <span class="cov1" title="1">return nil</span>
+}
+
+// FailoverStatusHandler provides an HTTP endpoint for status information
+type FailoverStatusHandler struct{}
+
+// CaddyModule returns the Caddy module information
+func (FailoverStatusHandler) CaddyModule() caddy.ModuleInfo <span class="cov1" title="1">{
+        return caddy.ModuleInfo{
+                ID:  "http.handlers.failover_status",
+                New: func() caddy.Module </span><span class="cov1" title="1">{ return new(FailoverStatusHandler) }</span>,
+        }
+}
+
+// ServeHTTP handles the status request
+func (h FailoverStatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error <span class="cov7" title="22">{
+        if r.Method != http.MethodGet </span><span class="cov1" title="1">{
+                http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+                return nil
+        }</span>
+
+        <span class="cov7" title="21">status := proxyRegistry.GetStatus()
+        w.Header().Set("Content-Type", "application/json")
+        json.NewEncoder(w).Encode(status)
+        return nil</span>
+}
+
+// parseFailoverStatus parses the failover_status directive
+func parseFailoverStatus(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) <span class="cov0" title="0">{
+        for h.Next() </span><span class="cov0" title="0">{
+                if h.NextArg() </span><span class="cov0" title="0">{
+                        return nil, h.ArgErr()
+                }</span>
+        }
+        <span class="cov0" title="0">return FailoverStatusHandler{}, nil</span>
+}
+
+// Interface guards
+var (
+        _ caddy.Provisioner           = (*FailoverProxy)(nil)
+        _ caddy.CleanerUpper          = (*FailoverProxy)(nil)
+        _ caddyhttp.MiddlewareHandler = (*FailoverProxy)(nil)
+        _ caddyfile.Unmarshaler       = (*FailoverProxy)(nil)
+        _ caddy.Module                = (*FailoverStatusHandler)(nil)
+        _ caddyhttp.MiddlewareHandler = (*FailoverStatusHandler)(nil)
+)
+</pre>
+
+		<pre class="file" id="file1" style="display: none">package caddyfailover
+
+import (
+        "encoding/json"
+        "fmt"
+        "net/http"
+        "net/http/httptest"
+        "testing"
+        "time"
+
+        "github.com/caddyserver/caddy/v2"
+)
+
+// TestServer represents a test HTTP server with controllable behavior
+type TestServer struct {
+        *httptest.Server
+        Healthy      bool
+        ResponseCode int
+        ResponseBody string
+        Latency      time.Duration
+        RequestCount int
+}
+
+// NewTestServer creates a new test server with customizable behavior
+func NewTestServer(healthy bool, responseCode int, responseBody string) *TestServer <span class="cov0" title="0">{
+        ts := &amp;TestServer{
+                Healthy:      healthy,
+                ResponseCode: responseCode,
+                ResponseBody: responseBody,
+        }
+
+        ts.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) </span><span class="cov0" title="0">{
+                ts.RequestCount++
+
+                if ts.Latency &gt; 0 </span><span class="cov0" title="0">{
+                        time.Sleep(ts.Latency)
+                }</span>
+
+                <span class="cov0" title="0">if r.URL.Path == "/health" </span><span class="cov0" title="0">{
+                        if ts.Healthy </span><span class="cov0" title="0">{
+                                w.WriteHeader(http.StatusOK)
+                        }</span> else<span class="cov0" title="0"> {
+                                w.WriteHeader(http.StatusServiceUnavailable)
+                        }</span>
+                        <span class="cov0" title="0">return</span>
+                }
+
+                <span class="cov0" title="0">w.WriteHeader(ts.ResponseCode)
+                if ts.ResponseBody != "" </span><span class="cov0" title="0">{
+                        fmt.Fprint(w, ts.ResponseBody)
+                }</span>
+        }))
+
+        <span class="cov0" title="0">return ts</span>
+}
+
+// SetHealthy updates the health status of the test server
+func (ts *TestServer) SetHealthy(healthy bool) <span class="cov0" title="0">{
+        ts.Healthy = healthy
+}</span>
+
+// SetResponse updates the response configuration
+func (ts *TestServer) SetResponse(code int, body string) <span class="cov0" title="0">{
+        ts.ResponseCode = code
+        ts.ResponseBody = body
+}</span>
+
+// ResetRequestCount resets the request counter
+func (ts *TestServer) ResetRequestCount() <span class="cov0" title="0">{
+        ts.RequestCount = 0
+}</span>
+
+// CreateTestProxy creates a properly configured FailoverProxy for testing
+func CreateTestProxy(t *testing.T, upstreams []string, opts ...ProxyOption) *FailoverProxy <span class="cov10" title="8">{
+        fp := &amp;FailoverProxy{
+                Upstreams:       upstreams,
+                FailDuration:    caddy.Duration(30 * time.Second),
+                DialTimeout:     caddy.Duration(2 * time.Second),
+                ResponseTimeout: caddy.Duration(5 * time.Second),
+                UpstreamHeaders: make(map[string]map[string]string),
+                HealthChecks:    make(map[string]*HealthCheck),
+        }
+
+        // Apply options
+        for _, opt := range opts </span><span class="cov4" title="2">{
+                opt(fp)
+        }</span>
+
+        // Provision the proxy
+        <span class="cov10" title="8">ctx := caddy.Context{}
+
+        if err := fp.Provision(ctx); err != nil </span><span class="cov0" title="0">{
+                t.Fatalf("Failed to provision proxy: %v", err)
+        }</span>
+
+        <span class="cov10" title="8">t.Cleanup(func() </span><span class="cov10" title="8">{
+                if err := fp.Cleanup(); err != nil </span><span class="cov0" title="0">{
+                        t.Errorf("Failed to cleanup proxy: %v", err)
+                }</span>
+        })
+
+        <span class="cov10" title="8">return fp</span>
+}
+
+// ProxyOption is a functional option for configuring test proxies
+type ProxyOption func(*FailoverProxy)
+
+// WithFailDuration sets the fail duration
+func WithFailDuration(d time.Duration) ProxyOption <span class="cov4" title="2">{
+        return func(fp *FailoverProxy) </span><span class="cov4" title="2">{
+                fp.FailDuration = caddy.Duration(d)
+        }</span>
+}
+
+// WithDialTimeout sets the dial timeout
+func WithDialTimeout(d time.Duration) ProxyOption <span class="cov0" title="0">{
+        return func(fp *FailoverProxy) </span><span class="cov0" title="0">{
+                fp.DialTimeout = caddy.Duration(d)
+        }</span>
+}
+
+// WithResponseTimeout sets the response timeout
+func WithResponseTimeout(d time.Duration) ProxyOption <span class="cov0" title="0">{
+        return func(fp *FailoverProxy) </span><span class="cov0" title="0">{
+                fp.ResponseTimeout = caddy.Duration(d)
+        }</span>
+}
+
+// WithHealthCheck adds a health check for an upstream
+func WithHealthCheck(upstream string, hc *HealthCheck) ProxyOption <span class="cov0" title="0">{
+        return func(fp *FailoverProxy) </span><span class="cov0" title="0">{
+                if fp.HealthChecks == nil </span><span class="cov0" title="0">{
+                        fp.HealthChecks = make(map[string]*HealthCheck)
+                }</span>
+                <span class="cov0" title="0">fp.HealthChecks[upstream] = hc</span>
+        }
+}
+
+// WithPath sets the path for the proxy
+func WithPath(path string) ProxyOption <span class="cov0" title="0">{
+        return func(fp *FailoverProxy) </span><span class="cov0" title="0">{
+                fp.Path = path
+                fp.HandlePath = path
+        }</span>
+}
+
+// AssertJSONContains checks if a JSON response contains expected fields
+func AssertJSONContains(t *testing.T, jsonStr string, expectedFields map[string]interface{}) <span class="cov0" title="0">{
+        var data map[string]interface{}
+        if err := json.Unmarshal([]byte(jsonStr), &amp;data); err != nil </span><span class="cov0" title="0">{
+                t.Fatalf("Failed to parse JSON: %v", err)
+        }</span>
+
+        <span class="cov0" title="0">for key, expectedValue := range expectedFields </span><span class="cov0" title="0">{
+                actualValue, exists := data[key]
+                if !exists </span><span class="cov0" title="0">{
+                        t.Errorf("Expected field %q not found in JSON", key)
+                        continue</span>
+                }
+
+                <span class="cov0" title="0">if fmt.Sprintf("%v", actualValue) != fmt.Sprintf("%v", expectedValue) </span><span class="cov0" title="0">{
+                        t.Errorf("Field %q: expected %v, got %v", key, expectedValue, actualValue)
+                }</span>
+        }
+}
+
+// AssertStatusResponse validates a status endpoint response
+func AssertStatusResponse(t *testing.T, response string) []PathStatus <span class="cov0" title="0">{
+        var status []PathStatus
+        if err := json.Unmarshal([]byte(response), &amp;status); err != nil </span><span class="cov0" title="0">{
+                t.Fatalf("Failed to parse status response: %v", err)
+        }</span>
+
+        // Check for auto: prefix
+        <span class="cov0" title="0">for _, s := range status </span><span class="cov0" title="0">{
+                if len(s.Path) &gt; 5 &amp;&amp; s.Path[:5] == "auto:" </span><span class="cov0" title="0">{
+                        t.Errorf("Path should not have 'auto:' prefix: %s", s.Path)
+                }</span>
+        }
+
+        <span class="cov0" title="0">return status</span>
+}
+
+// CreateTestRegistry creates a test registry with sample data
+func CreateTestRegistry(paths ...string) *ProxyRegistry <span class="cov1" title="1">{
+        registry := &amp;ProxyRegistry{
+                proxies: make(map[string]*ProxyEntry),
+                order:   make([]string, 0),
+        }
+
+        for i, path := range paths </span><span class="cov7" title="4">{
+                proxy := &amp;FailoverProxy{
+                        Upstreams:  []string{fmt.Sprintf("http://localhost:%d", 5000+i)},
+                        HandlePath: path,
+                        Path:       path,
+                }
+                registry.Register(path, proxy)
+        }</span>
+
+        <span class="cov1" title="1">return registry</span>
+}
+
+// WaitForCondition waits for a condition to be true with timeout
+func WaitForCondition(t *testing.T, timeout time.Duration, interval time.Duration, condition func() bool, message string) <span class="cov0" title="0">{
+        deadline := time.Now().Add(timeout)
+        for time.Now().Before(deadline) </span><span class="cov0" title="0">{
+                if condition() </span><span class="cov0" title="0">{
+                        return
+                }</span>
+                <span class="cov0" title="0">time.Sleep(interval)</span>
+        }
+        <span class="cov0" title="0">t.Fatalf("Timeout waiting for condition: %s", message)</span>
+}
+
+// MockHealthCheck creates a mock health check configuration
+func MockHealthCheck(path string, interval, timeout time.Duration, expectedStatus int) *HealthCheck <span class="cov0" title="0">{
+        return &amp;HealthCheck{
+                Path:           path,
+                Interval:       caddy.Duration(interval),
+                Timeout:        caddy.Duration(timeout),
+                ExpectedStatus: expectedStatus,
+        }
+}</span>
+</pre>
+
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>

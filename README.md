@@ -16,48 +16,125 @@ A Caddy plugin that provides intelligent failover between multiple upstream serv
 
 ## Testing
 
-This plugin uses Go's standard testing framework with comprehensive unit, integration, and benchmark tests.
+The plugin includes comprehensive tests with a convenient test runner script.
 
-### Test Structure
+### Quick Start
 
+```bash
+# Run all tests
+./scripts/test.sh all
+
+# Run unit tests only
+./scripts/test.sh unit
+
+# Run with coverage report
+./scripts/test.sh coverage
+
+# Run with race detector
+./scripts/test.sh race
+
+# Run benchmarks
+./scripts/test.sh benchmark
+
+# Run integration tests
+./scripts/test.sh integration
+
+# Test status endpoint manually
+./scripts/test.sh status
 ```
-.
-├── failover_test.go            # Core unit tests for registry and path handling
-├── failover_handler_test.go    # HTTP handler functionality tests
-├── failover_integration_test.go # Integration tests with full Caddy server
-├── failover_benchmark_test.go  # Performance benchmarks
-├── test_helpers.go             # Shared test utilities and helpers
-└── testdata/                   # Test fixtures
-    ├── basic.Caddyfile         # Basic configuration for testing
-    ├── complex.Caddyfile      # Complex multi-path configuration
-    └── expected_status.json   # Expected status response fixture
+
+### Test Commands
+
+The `scripts/test.sh` script provides the following commands:
+
+| Command | Description |
+|---------|-------------|
+| `unit` | Run unit tests only |
+| `integration` | Run integration tests (builds Caddy with plugin) |
+| `benchmark` | Run performance benchmarks |
+| `all` | Run all tests (unit + integration) |
+| `coverage` | Run tests with coverage report (generates HTML report) |
+| `race` | Run tests with race detector |
+| `quick` | Run quick tests (excludes integration tests) |
+| `status` | Test the failover status endpoint manually |
+| `help` | Show help message |
+
+### Options
+
+- `-v, --verbose`: Run with verbose output
+- `-c, --coverage`: Generate coverage report
+- `-r, --race`: Enable race detector
+
+### Examples
+
+```bash
+# Run unit tests with verbose output
+./scripts/test.sh unit -v
+
+# Run all tests with coverage and race detection
+./scripts/test.sh all -c -r
+
+# Quick test during development (no integration tests)
+./scripts/test.sh quick
+
+# Run benchmarks
+./scripts/test.sh benchmark
 ```
 
-### Running Tests
+### Manual Test Commands
+
+If you prefer running tests directly with `go test`:
 
 ```bash
 # Run all tests
 go test ./...
 
-# Run with coverage
-go test -cover ./...
-
 # Run with race detection
 go test -race ./...
 
-# Run specific test
-go test -run TestProxyRegistry
+# Run with coverage
+go test -coverprofile=coverage.out -covermode=atomic ./...
+go tool cover -html=coverage.out -o coverage.html
 
 # Run benchmarks
-go test -bench=. -benchmem
+go test -bench=. -benchmem -run=^$ ./...
 
-# Run integration tests only
-go test -run Integration
+# Run only unit tests (skip integration)
+go test -short ./...
 
-# Generate coverage report
-go test -coverprofile=coverage.out ./...
-go tool cover -html=coverage.out
+# Run specific test
+go test -v -run TestProxyRegistry ./...
 ```
+
+### Test Structure
+
+```
+.
+├── failover_test.go           # Core unit tests
+├── failover_integration_test.go # Integration tests with caddytest
+├── failover_benchmark_test.go  # Performance benchmarks
+├── failover_handler_test.go    # HTTP handler tests
+├── test_helpers.go             # Shared test utilities
+├── testdata/                   # Test fixtures
+│   ├── basic.Caddyfile
+│   ├── complex.Caddyfile
+│   └── expected_status.json
+├── scripts/
+│   └── test.sh                # Test runner script
+└── test/
+    └── test.sh                # Docker-based integration tests
+```
+
+### Docker Integration Tests
+
+For full end-to-end testing with Docker:
+
+```bash
+# Run Docker-based integration tests
+./test/test.sh
+```
+
+This builds a Docker image with the plugin and tests it against mock servers.
 
 ### Test Categories
 

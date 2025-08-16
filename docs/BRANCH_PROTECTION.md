@@ -10,10 +10,22 @@ The easiest way to configure branch protection is using our setup script:
 ./scripts/setup-branch-protection.sh
 ```
 
+Or with an existing token:
+
+```bash
+export GITHUB_TOKEN="your-pat-here"
+./scripts/setup-branch-protection.sh
+```
+
 This script will:
-1. Guide you through creating a Personal Access Token (PAT)
+1. Guide you through creating a Personal Access Token (PAT) if needed
 2. Save it as a repository secret (for future use)
 3. Configure branch protection rules directly using the GitHub API
+
+The script can use a token from three sources (in order of preference):
+- Passed as an argument to the function
+- `GITHUB_TOKEN` environment variable
+- Prompted interactively
 
 ## Manual Setup
 

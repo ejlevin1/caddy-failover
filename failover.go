@@ -30,35 +30,71 @@ func init() {
 var (
 	// Global registry to track all failover proxy instances
 	proxyRegistry = &ProxyRegistry{
-		proxies: make(map[string][]*FailoverProxy),
+		proxies: make(map[string]*ProxyEntry),
+		order:   make([]string, 0),
 	}
 )
+
+// ProxyEntry represents a unique proxy configuration for a path
+type ProxyEntry struct {
+	Path      string
+	Proxy     *FailoverProxy
+	Upstreams map[string]bool // Track unique upstreams to prevent duplicates
+}
 
 // ProxyRegistry tracks all failover proxy instances for status reporting
 type ProxyRegistry struct {
 	mu      sync.RWMutex
-	proxies map[string][]*FailoverProxy // path -> proxies
+	proxies map[string]*ProxyEntry // path -> proxy entry
+	order   []string               // maintains registration order
 }
 
 // Register adds a proxy to the registry
 func (r *ProxyRegistry) Register(path string, proxy *FailoverProxy) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.proxies[path] = append(r.proxies[path], proxy)
+
+	// Check if this path already exists
+	if entry, exists := r.proxies[path]; exists {
+		// Merge upstreams if not already present
+		for _, upstream := range proxy.Upstreams {
+			if !entry.Upstreams[upstream] {
+				// This is a new upstream for this path, but we'll use the first proxy's configuration
+				// to avoid duplicates. This ensures we don't duplicate the same upstream
+				entry.Upstreams[upstream] = true
+			}
+		}
+	} else {
+		// New path, create entry
+		entry := &ProxyEntry{
+			Path:      path,
+			Proxy:     proxy,
+			Upstreams: make(map[string]bool),
+		}
+		for _, upstream := range proxy.Upstreams {
+			entry.Upstreams[upstream] = true
+		}
+		r.proxies[path] = entry
+		r.order = append(r.order, path)
+	}
 }
 
 // Unregister removes a proxy from the registry
 func (r *ProxyRegistry) Unregister(path string, proxy *FailoverProxy) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	proxies := r.proxies[path]
-	for i, p := range proxies {
-		if p == proxy {
-			r.proxies[path] = append(proxies[:i], proxies[i+1:]...)
-			if len(r.proxies[path]) == 0 {
-				delete(r.proxies, path)
+
+	if entry, exists := r.proxies[path]; exists {
+		// Only remove if this is the same proxy instance
+		if entry.Proxy == proxy {
+			delete(r.proxies, path)
+			// Remove from order slice
+			for i, p := range r.order {
+				if p == path {
+					r.order = append(r.order[:i], r.order[i+1:]...)
+					break
+				}
 			}
-			break
 		}
 	}
 }
@@ -69,25 +105,29 @@ func (r *ProxyRegistry) GetStatus() []PathStatus {
 	defer r.mu.RUnlock()
 
 	var status []PathStatus
-	for path, proxies := range r.proxies {
-		// Use HandlePath if available for display, otherwise use the registration path
+	// Use order to maintain consistent ordering
+	for _, path := range r.order {
+		entry, exists := r.proxies[path]
+		if !exists {
+			continue
+		}
+
+		// Use the clean path for display
 		displayPath := path
-		if len(proxies) > 0 && proxies[0].HandlePath != "" {
-			displayPath = proxies[0].HandlePath
+		if entry.Proxy.HandlePath != "" {
+			displayPath = entry.Proxy.HandlePath
 		}
 
 		ps := PathStatus{
 			Path:            displayPath,
-			FailoverProxies: []UpstreamStatus{},
+			FailoverProxies: entry.Proxy.GetUpstreamStatus(),
 		}
 
-		for _, proxy := range proxies {
-			ps.FailoverProxies = append(ps.FailoverProxies, proxy.GetUpstreamStatus()...)
-			// Get the active upstream for this proxy
-			if active := proxy.GetActiveUpstream(); active != "" {
-				ps.Active = active
-			}
+		// Get the active upstream
+		if active := entry.Proxy.GetActiveUpstream(); active != "" {
+			ps.Active = active
 		}
+
 		status = append(status, ps)
 	}
 	return status
@@ -187,12 +227,12 @@ func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 	f.shutdown = make(chan struct{})
 
 	// Register with global registry
-	// If no path is set, use a generic identifier based on upstreams
+	// Use Path if explicitly set, otherwise use HandlePath
 	registrationPath := f.Path
-	if registrationPath == "" && len(f.Upstreams) > 0 {
-		// Generate a path identifier from the first upstream for tracking
-		registrationPath = fmt.Sprintf("auto:%s", f.Upstreams[0])
+	if registrationPath == "" && f.HandlePath != "" {
+		registrationPath = f.HandlePath
 	}
+	// Only register if we have a valid path
 	if registrationPath != "" {
 		proxyRegistry.Register(registrationPath, f)
 	}
@@ -324,8 +364,8 @@ func (f *FailoverProxy) Cleanup() error {
 
 	// Unregister from global registry
 	registrationPath := f.Path
-	if registrationPath == "" && len(f.Upstreams) > 0 {
-		registrationPath = fmt.Sprintf("auto:%s", f.Upstreams[0])
+	if registrationPath == "" && f.HandlePath != "" {
+		registrationPath = f.HandlePath
 	}
 	if registrationPath != "" {
 		proxyRegistry.Unregister(registrationPath, f)

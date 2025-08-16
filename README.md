@@ -127,7 +127,7 @@ go test -v -run TestProxyRegistry ./...
 
 ### Docker Integration Tests
 
-For full end-to-end testing with Docker:
+For full end-to-end testing with Docker containers:
 
 ```bash
 # Run Docker-based integration tests
@@ -136,7 +136,16 @@ make docker-test
 ./test/test.sh
 ```
 
-This builds a Docker image with the plugin and tests it against mock servers.
+The Docker tests complement the Go tests by:
+- Building a real Caddy binary with the plugin
+- Running Caddy in a Docker container
+- Testing against actual mock HTTP servers in containers
+- Validating networking, failover, and header propagation
+- Testing the plugin in a production-like environment
+
+Additional Docker test scripts:
+- `./test/test-failover-status.sh` - Tests the status endpoint
+- `./test/test-failover-logs.sh` - Validates logging and health check headers
 
 ### CI/CD Testing
 

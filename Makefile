@@ -16,8 +16,23 @@ help: ## Show this help message
 build: ## Build the plugin locally (requires Go)
 	go build -v ./...
 
-test: ## Run Go tests
-	go test -v -race -cover ./...
+test: ## Run unit tests with coverage and race detection
+	./scripts/test.sh unit -c -r
+
+test-all: ## Run all tests (unit + integration)
+	./scripts/test.sh all -v
+
+test-integration: ## Run integration tests with verbose output
+	./scripts/test.sh integration -v
+
+test-benchmark: ## Run benchmark tests
+	./scripts/test.sh benchmark
+
+test-coverage: ## Generate comprehensive coverage report
+	./scripts/test.sh coverage
+
+test-quick: ## Run quick tests (exclude integration)
+	./scripts/test.sh quick
 
 xcaddy-build: ## Build Caddy with this plugin using xcaddy
 	@which xcaddy > /dev/null || (echo "Installing xcaddy..." && go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest)

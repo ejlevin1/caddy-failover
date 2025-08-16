@@ -32,10 +32,17 @@ xcaddy build --with github.com/ejlevin1/caddy-failover=.
 
 ### Using Docker
 
-Pull the pre-built image:
+Pull the pre-built image with semantic versioning tags:
 
 ```bash
+# Latest version
 docker pull ghcr.io/ejlevin1/caddy-failover:latest
+
+# Specific version
+docker pull ghcr.io/ejlevin1/caddy-failover:1.6.1
+
+# Major version (gets latest 1.x.x)
+docker pull ghcr.io/ejlevin1/caddy-failover:1
 ```
 
 Or build your own:

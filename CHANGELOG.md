@@ -1,3 +1,11 @@
+## [1.6.1](https://github.com/ejlevin1/caddy-failover/compare/v1.6.0...v1.6.1) (2025-08-16)
+
+
+### Bug Fixes
+
+* enable Docker image builds on semantic releases ([b172065](https://github.com/ejlevin1/caddy-failover/commit/b172065d983831d5473000ef4275e1342d7fae21))
+* enable Docker image builds on semantic releases and optimize PR workflow ([3a2b6ce](https://github.com/ejlevin1/caddy-failover/commit/3a2b6ce36dd699611e6631a72f6ff7c31d6f0fbf))
+
 # [1.6.0](https://github.com/ejlevin1/caddy-failover/compare/v1.5.0...v1.6.0) (2025-08-15)
 
 

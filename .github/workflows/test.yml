@@ -1,0 +1,64 @@
+name: Test Plugin
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  test-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install xcaddy
+        run: go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+      - name: Build Caddy with plugin
+        run: |
+          xcaddy build \
+            --with github.com/ejlevin1/caddy-failover=.
+
+      - name: Test plugin build
+        run: |
+          ./caddy version
+          ./caddy list-modules | grep failover_proxy
+
+      - name: Validate Caddyfile
+        run: |
+          cat > test.Caddyfile <<EOF
+          {
+              order failover_proxy before reverse_proxy
+          }
+          :8080 {
+              handle {
+                  failover_proxy http://httpbin.org https://httpbin.org {
+                      fail_duration 3s
+                  }
+              }
+          }
+          EOF
+          ./caddy validate --config test.Caddyfile --adapter caddyfile
+
+
+  integration-test:
+    runs-on: ubuntu-latest
+    needs: test-plugin
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run integration tests
+        run: |
+          chmod +x test/test.sh
+          ./test/test.sh

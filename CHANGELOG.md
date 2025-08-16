@@ -1,3 +1,10 @@
+## [1.6.3](https://github.com/ejlevin1/caddy-failover/compare/v1.6.2...v1.6.3) (2025-08-16)
+
+
+### Bug Fixes
+
+* redesign proxy registry to fix status endpoint issues ([5c0a005](https://github.com/ejlevin1/caddy-failover/commit/5c0a005ad85863c77525bd7d9489c2e11b0c894f))
+
 ## [1.6.2](https://github.com/ejlevin1/caddy-failover/compare/v1.6.1...v1.6.2) (2025-08-16)
 
 

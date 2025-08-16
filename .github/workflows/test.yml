@@ -48,7 +48,7 @@ jobs:
         run: go vet ./...
 
       - name: Run unit tests with coverage
-        run: ./scripts/test.sh unit -c -r
+        run: ./scripts/test.sh unit -c -r -n
 
       - name: Run quick tests
         run: ./scripts/test.sh quick
@@ -139,7 +139,7 @@ jobs:
         run: chmod +x ./scripts/test.sh
 
       - name: Run tests with coverage
-        run: ./scripts/test.sh coverage
+        run: ./scripts/test.sh coverage -n
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3

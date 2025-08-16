@@ -15,6 +15,7 @@ NC='\033[0m' # No Color
 VERBOSE=""
 COVERAGE=""
 RACE=""
+OPEN_BROWSER="yes"
 
 # Function to print colored output
 print_color() {
@@ -43,6 +44,7 @@ Options:
     -v, --verbose    Run with verbose output (shows detailed test output and status JSON)
     -c, --coverage   Generate coverage report
     -r, --race       Enable race detector
+    -n, --no-browser Do not open coverage report in browser
     -h, --help       Show this help message
 
 Examples:
@@ -74,6 +76,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -r|--race)
             RACE="-race"
+            shift
+            ;;
+        -n|--no-browser)
+            OPEN_BROWSER="no"
             shift
             ;;
         -h|--help)
@@ -164,13 +170,17 @@ generate_coverage_report() {
     print_color $YELLOW "\n📊 Generating HTML Coverage Report..."
     go tool cover -html=coverage.out -o coverage.html
 
-    # Try to open the HTML report in browser (if available)
-    if command -v open &> /dev/null; then
-        print_color $GREEN "✅ Opening coverage report in browser..."
-        open coverage.html
-    elif command -v xdg-open &> /dev/null; then
-        print_color $GREEN "✅ Opening coverage report in browser..."
-        xdg-open coverage.html
+    # Try to open the HTML report in browser (if available and enabled)
+    if [[ "$OPEN_BROWSER" == "yes" ]]; then
+        if command -v open &> /dev/null; then
+            print_color $GREEN "✅ Opening coverage report in browser..."
+            open coverage.html
+        elif command -v xdg-open &> /dev/null; then
+            print_color $GREEN "✅ Opening coverage report in browser..."
+            xdg-open coverage.html
+        else
+            print_color $GREEN "✅ HTML coverage report saved to: coverage.html"
+        fi
     else
         print_color $GREEN "✅ HTML coverage report saved to: coverage.html"
     fi

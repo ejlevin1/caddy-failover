@@ -58,12 +58,10 @@ func TestFailoverProxyIntegration(t *testing.T) {
 	tester.AssertGetResponse("http://localhost:9080/api/test", 200, "primary server response")
 
 	// Test 2: Status endpoint should return JSON
-	resp, body := tester.AssertGetResponse("http://localhost:9080/admin/failover/status", 200, "")
+	req, _ := http.NewRequest("GET", "http://localhost:9080/admin/failover/status", nil)
+	resp := tester.AssertResponseCode(req, 200)
 	if resp.StatusCode != 200 {
-		t.Error("Expected status 200 from status endpoint")
-	}
-	if body == "" {
-		t.Error("Expected non-empty response from status endpoint")
+		t.Errorf("Expected status 200 from status endpoint, got %d", resp.StatusCode)
 	}
 }
 

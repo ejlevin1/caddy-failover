@@ -119,6 +119,17 @@ run_integration_tests() {
     if ! command -v xcaddy &> /dev/null; then
         print_color $YELLOW "xcaddy not found. Installing..."
         go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+        # Add GOPATH/bin to PATH if not already there
+        export PATH=$PATH:$(go env GOPATH)/bin
+
+        # Check again after installation
+        if ! command -v xcaddy &> /dev/null; then
+            print_color $RED "Failed to install xcaddy. Please install manually:"
+            print_color $YELLOW "  go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest"
+            print_color $YELLOW "  export PATH=\$PATH:\$(go env GOPATH)/bin"
+            return 1
+        fi
     fi
 
     # Build Caddy with the plugin
@@ -168,6 +179,23 @@ test_status_endpoint() {
     if [[ ! -f "testdata/basic.Caddyfile" ]]; then
         print_color $RED "Error: testdata/basic.Caddyfile not found"
         exit 1
+    fi
+
+    # Check if xcaddy is installed
+    if ! command -v xcaddy &> /dev/null; then
+        print_color $YELLOW "xcaddy not found. Installing..."
+        go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+        # Add GOPATH/bin to PATH if not already there
+        export PATH=$PATH:$(go env GOPATH)/bin
+
+        # Check again after installation
+        if ! command -v xcaddy &> /dev/null; then
+            print_color $RED "Failed to install xcaddy. Please install manually:"
+            print_color $YELLOW "  go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest"
+            print_color $YELLOW "  export PATH=\$PATH:\$(go env GOPATH)/bin"
+            return 1
+        fi
     fi
 
     # Build Caddy with the plugin

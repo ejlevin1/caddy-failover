@@ -1,3 +1,10 @@
+## [1.6.2](https://github.com/ejlevin1/caddy-failover/compare/v1.6.1...v1.6.2) (2025-08-16)
+
+
+### Bug Fixes
+
+* update Docker documentation with semantic versioning examples ([5de2478](https://github.com/ejlevin1/caddy-failover/commit/5de24782d4d91e98c7ab054ff1b44d5b85ccd6d5))
+
 ## [1.6.1](https://github.com/ejlevin1/caddy-failover/compare/v1.6.0...v1.6.1) (2025-08-16)
 
 

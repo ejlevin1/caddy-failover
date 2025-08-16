@@ -323,10 +323,13 @@ func TestRunHealthCheckInvalidURL(t *testing.T) {
 // TestRunHealthCheckCustomPath tests health check with custom path
 func TestRunHealthCheckCustomPath(t *testing.T) {
 	customPath := "/api/health/status"
-	requestedPath := ""
+	var requestedPath string
+	var mu sync.Mutex
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		requestedPath = r.URL.Path
+		mu.Unlock()
 		if r.URL.Path == customPath {
 			w.WriteHeader(http.StatusOK)
 		} else {
@@ -361,8 +364,11 @@ func TestRunHealthCheckCustomPath(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify correct path was requested
-	if requestedPath != customPath {
-		t.Errorf("Expected health check path %s, got %s", customPath, requestedPath)
+	mu.Lock()
+	actualPath := requestedPath
+	mu.Unlock()
+	if actualPath != customPath {
+		t.Errorf("Expected health check path %s, got %s", customPath, actualPath)
 	}
 
 	// Verify health status
@@ -382,9 +388,12 @@ func TestRunHealthCheckCustomPath(t *testing.T) {
 // TestRunHealthCheckWithBasePathURL tests health check when upstream URL has a base path
 func TestRunHealthCheckWithBasePathURL(t *testing.T) {
 	var requestedPath string
+	var mu sync.Mutex
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		requestedPath = r.URL.Path
+		mu.Unlock()
 		if r.URL.Path == "/health" {
 			w.WriteHeader(http.StatusOK)
 		} else {
@@ -422,8 +431,11 @@ func TestRunHealthCheckWithBasePathURL(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify health check path doesn't include the base path
-	if requestedPath != "/health" {
-		t.Errorf("Health check should use path %s, got %s", "/health", requestedPath)
+	mu.Lock()
+	actualPath := requestedPath
+	mu.Unlock()
+	if actualPath != "/health" {
+		t.Errorf("Health check should use path %s, got %s", "/health", actualPath)
 	}
 
 	// Cleanup

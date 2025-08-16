@@ -130,11 +130,16 @@ func TestResetRequestCount(t *testing.T) {
 // TestWithDialTimeout tests the WithDialTimeout option
 func TestWithDialTimeout(t *testing.T) {
 	timeout := 5 * time.Second
-	proxy := CreateTestProxy(
-		t,
-		[]string{"http://localhost:8080"},
-		WithDialTimeout(timeout),
-	)
+
+	// Create proxy without provisioning to avoid race conditions
+	proxy := &FailoverProxy{
+		Upstreams:       []string{"http://localhost:8080"},
+		UpstreamHeaders: make(map[string]map[string]string),
+		HealthChecks:    make(map[string]*HealthCheck),
+	}
+
+	// Apply the option
+	WithDialTimeout(timeout)(proxy)
 
 	if proxy.DialTimeout != caddy.Duration(timeout) {
 		t.Errorf("Expected DialTimeout %v, got %v", timeout, proxy.DialTimeout)
@@ -144,11 +149,16 @@ func TestWithDialTimeout(t *testing.T) {
 // TestWithResponseTimeout tests the WithResponseTimeout option
 func TestWithResponseTimeout(t *testing.T) {
 	timeout := 10 * time.Second
-	proxy := CreateTestProxy(
-		t,
-		[]string{"http://localhost:8080"},
-		WithResponseTimeout(timeout),
-	)
+
+	// Create proxy without provisioning to avoid race conditions
+	proxy := &FailoverProxy{
+		Upstreams:       []string{"http://localhost:8080"},
+		UpstreamHeaders: make(map[string]map[string]string),
+		HealthChecks:    make(map[string]*HealthCheck),
+	}
+
+	// Apply the option
+	WithResponseTimeout(timeout)(proxy)
 
 	if proxy.ResponseTimeout != caddy.Duration(timeout) {
 		t.Errorf("Expected ResponseTimeout %v, got %v", timeout, proxy.ResponseTimeout)
@@ -236,11 +246,15 @@ func TestWithHealthCheck(t *testing.T) {
 		ExpectedStatus: 200,
 	}
 
-	proxy := CreateTestProxy(
-		t,
-		[]string{"http://localhost:8080"},
-		WithHealthCheck("http://localhost:8080", hc),
-	)
+	// Create proxy without provisioning to avoid starting health checks
+	proxy := &FailoverProxy{
+		Upstreams:       []string{"http://localhost:8080"},
+		UpstreamHeaders: make(map[string]map[string]string),
+		HealthChecks:    make(map[string]*HealthCheck),
+	}
+
+	// Apply the option
+	WithHealthCheck("http://localhost:8080", hc)(proxy)
 
 	if proxy.HealthChecks == nil {
 		t.Fatal("HealthChecks map is nil")
@@ -254,11 +268,16 @@ func TestWithHealthCheck(t *testing.T) {
 // TestWithPath tests the WithPath option
 func TestWithPath(t *testing.T) {
 	testPath := "/api/v1"
-	proxy := CreateTestProxy(
-		t,
-		[]string{"http://localhost:8080"},
-		WithPath(testPath),
-	)
+
+	// Create proxy without provisioning to avoid race conditions
+	proxy := &FailoverProxy{
+		Upstreams:       []string{"http://localhost:8080"},
+		UpstreamHeaders: make(map[string]map[string]string),
+		HealthChecks:    make(map[string]*HealthCheck),
+	}
+
+	// Apply the option
+	WithPath(testPath)(proxy)
 
 	if proxy.Path != testPath {
 		t.Errorf("Expected Path %q, got %q", testPath, proxy.Path)

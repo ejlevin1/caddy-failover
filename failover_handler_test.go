@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -298,12 +299,12 @@ func TestXForwardedHeaders(t *testing.T) {
 
 // TestConcurrentRequests tests that the proxy handles concurrent requests correctly
 func TestConcurrentRequests(t *testing.T) {
-	requestCount := 0
+	var requestCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount++
+		count := requestCount.Add(1)
 		time.Sleep(10 * time.Millisecond) // Simulate some processing
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "response-%d", requestCount)
+		fmt.Fprintf(w, "response-%d", count)
 	}))
 	defer server.Close()
 
@@ -335,8 +336,8 @@ func TestConcurrentRequests(t *testing.T) {
 		<-done
 	}
 
-	if requestCount != concurrency {
-		t.Errorf("Expected %d requests, got %d", concurrency, requestCount)
+	if requestCount.Load() != int32(concurrency) {
+		t.Errorf("Expected %d requests, got %d", concurrency, requestCount.Load())
 	}
 }
 

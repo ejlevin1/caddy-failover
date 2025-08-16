@@ -40,7 +40,7 @@ Commands:
     help        Show this help message
 
 Options:
-    -v, --verbose    Run with verbose output
+    -v, --verbose    Run with verbose output (shows detailed test output and status JSON)
     -c, --coverage   Generate coverage report
     -r, --race       Enable race detector
     -h, --help       Show this help message
@@ -48,10 +48,11 @@ Options:
 Examples:
     $0 unit                    # Run unit tests
     $0 unit -v                 # Run unit tests with verbose output
+    $0 integration             # Run integration tests
+    $0 integration -v          # Run integration tests with status endpoint output
     $0 coverage                # Run all tests with coverage
     $0 race                    # Run all tests with race detector
     $0 benchmark              # Run benchmark tests
-    $0 integration            # Run integration tests
     $0 all -v -c              # Run all tests with verbose output and coverage
 
 EOF
@@ -140,6 +141,13 @@ run_integration_tests() {
 
     print_color $YELLOW "Command: $cmd"
     eval $cmd
+
+    # Show the status endpoint output if verbose mode is enabled
+    if [[ "$VERBOSE" == "-v" ]]; then
+        print_color $GREEN "\n=== Status Endpoint Output Demo ==="
+        print_color $YELLOW "Showing actual JSON response from failover status endpoint..."
+        go test -v -run TestDisplayStatusEndpoint ./... 2>&1 | grep -B 2 -A 100 "FAILOVER STATUS" || true
+    fi
 }
 
 # Function to run benchmark tests
@@ -170,6 +178,7 @@ run_quick_tests() {
     print_color $YELLOW "Command: $cmd"
     eval $cmd
 }
+
 
 # Function to test failover status endpoint
 test_status_endpoint() {

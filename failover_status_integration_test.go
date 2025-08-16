@@ -160,7 +160,17 @@ func TestStatusEndpointWithMultipleProxies(t *testing.T) {
 		t.Fatalf("Failed to parse JSON response: %v\nBody: %s", err, string(body))
 	}
 
-	// Print the status for visibility
+	// Pretty print the JSON response
+	prettyJSON, err := json.MarshalIndent(status, "", "  ")
+	if err == nil {
+		t.Log("\n========================================")
+		t.Log("STATUS ENDPOINT JSON RESPONSE:")
+		t.Log("========================================")
+		t.Log(string(prettyJSON))
+		t.Log("========================================\n")
+	}
+
+	// Also print formatted summary
 	t.Logf("Status endpoint returned %d paths:", len(status))
 	for _, ps := range status {
 		t.Logf("  Path: %s", ps.Path)

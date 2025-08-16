@@ -11,6 +11,8 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # Note: Branch protection requires admin permissions which GITHUB_TOKEN doesn't have
+  # You must use a PAT (Personal Access Token) with repo and admin:repo permissions
 
 jobs:
   configure-protection:
@@ -21,9 +23,19 @@ jobs:
       - name: Configure main branch protection
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Use PAT instead of GITHUB_TOKEN for admin permissions
+          # Create a PAT with 'repo' and 'admin:repo' scopes
+          github-token: ${{ secrets.ADMIN_PAT || secrets.GITHUB_TOKEN }}
           script: |
             try {
+              // Check if we're using a PAT or GITHUB_TOKEN
+              const token = '${{ secrets.ADMIN_PAT }}';
+              if (!token || token === '') {
+                console.log('⚠️  Warning: ADMIN_PAT secret not configured');
+                console.log('   Branch protection requires a Personal Access Token with admin permissions');
+                console.log('   The default GITHUB_TOKEN does not have sufficient permissions\n');
+              }
+
               await github.rest.repos.updateBranchProtection({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -59,21 +71,23 @@ jobs:
 
               // If the error is due to missing admin permissions, provide instructions
               if (error.status === 403) {
-                console.log('\n📝 Manual Configuration Required:');
-                console.log('Please configure branch protection manually in GitHub:');
+                console.log('\n📝 To automate branch protection, you need to:');
+                console.log('1. Create a Personal Access Token (PAT):');
+                console.log('   - Go to GitHub Settings → Developer settings → Personal access tokens');
+                console.log('   - Create a token with "repo" and "admin:repo_hook" scopes');
+                console.log('2. Add the PAT as a repository secret:');
+                console.log('   - Go to repository Settings → Secrets and variables → Actions');
+                console.log('   - Add a new secret named "ADMIN_PAT" with your token value');
+                console.log('\nAlternatively, configure branch protection manually:');
                 console.log('1. Go to Settings → Branches');
                 console.log('2. Click "Add rule" for the main branch');
-                console.log('3. Configure the following settings:');
-                console.log('   - Require pull request reviews before merging (1 approval)');
-                console.log('   - Dismiss stale pull request approvals when new commits are pushed');
-                console.log('   - Require review from CODEOWNERS');
-                console.log('   - Allow repository owner (ejlevin1) to bypass PR requirements');
-                console.log('   - Require status checks to pass (test, build)');
-                console.log('   - Require branches to be up to date before merging');
-                console.log('   - Require conversation resolution before merging');
-                console.log('   - Do not allow force pushes');
-                console.log('   - Do not allow deletions');
-              }
+                console.log('3. Configure the protection settings as needed');
 
-              throw error;
+                // Don't fail the workflow for permission issues
+                console.log('\n⚠️  Continuing without branch protection (requires manual setup)');
+                process.exit(0);
+              } else {
+                // For other errors, still fail the workflow
+                throw error;
+              }
             }

@@ -131,10 +131,20 @@ For full end-to-end testing with Docker:
 
 ```bash
 # Run Docker-based integration tests
+make docker-test
+# or directly:
 ./test/test.sh
 ```
 
 This builds a Docker image with the plugin and tests it against mock servers.
+
+### CI/CD Testing
+
+GitHub Actions automatically runs tests using the `scripts/test.sh` script:
+- **Unit tests**: Run on every push and PR with coverage and race detection
+- **Integration tests**: Run on pull requests with verbose output showing status endpoint
+- **Benchmarks**: Run after unit tests pass
+- **Coverage reports**: Generated and uploaded to Codecov
 
 ### Test Categories
 

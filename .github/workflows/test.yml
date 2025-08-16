@@ -33,6 +33,9 @@ jobs:
           go mod download
           go mod verify
 
+      - name: Make test script executable
+        run: chmod +x ./scripts/test.sh
+
       - name: Run go fmt
         run: |
           if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
@@ -44,17 +47,17 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
-      - name: Run unit tests
-        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+      - name: Run unit tests with coverage
+        run: ./scripts/test.sh unit -c -r
 
-      - name: Run tests with race detector
-        run: go test -race -short ./...
+      - name: Run quick tests
+        run: ./scripts/test.sh quick
 
       - name: Upload coverage to Codecov
         if: matrix.go-version == '1.22'
         uses: codecov/codecov-action@v3
         with:
-          file: ./coverage.txt
+          file: ./coverage.out
           fail_ci_if_error: false
 
   benchmark:
@@ -71,8 +74,11 @@ jobs:
         with:
           go-version: '1.22'
 
+      - name: Make test script executable
+        run: chmod +x ./scripts/test.sh
+
       - name: Run benchmarks
-        run: go test -bench=. -benchmem -run=^$ ./...
+        run: ./scripts/test.sh benchmark
 
   build-and-validate:
     name: Build and Validate Plugin
@@ -114,7 +120,35 @@ jobs:
           ./caddy validate --config testdata/complex.Caddyfile --adapter caddyfile
 
 
+  coverage-report:
+    name: Generate Coverage Report
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Make test script executable
+        run: chmod +x ./scripts/test.sh
+
+      - name: Run tests with coverage
+        run: ./scripts/test.sh coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.out
+          fail_ci_if_error: true
+
   integration-test:
+    name: Run Integration Tests
     runs-on: ubuntu-latest
     needs: test
     if: github.event_name == 'pull_request'
@@ -128,6 +162,13 @@ jobs:
         with:
           go-version: '1.22'
 
-      - name: Run integration tests
+      - name: Make test script executable
+        run: chmod +x ./scripts/test.sh
+
+      - name: Install xcaddy
+        run: go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+      - name: Run integration tests with verbose output
         run: |
-          go test -v -tags=integration ./...
+          export PATH=$PATH:$(go env GOPATH)/bin
+          ./scripts/test.sh integration -v

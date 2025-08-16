@@ -1,0 +1,67 @@
+[
+  {
+    "path": "/auth/*",
+    "failover_proxies": [
+      {
+        "host": "http://auth-primary.local:5051",
+        "status": "UP",
+        "health_check_enabled": true
+      },
+      {
+        "host": "http://auth-secondary.local:5052",
+        "status": "UP",
+        "health_check_enabled": true
+      }
+    ]
+  },
+  {
+    "path": "/admin/*",
+    "failover_proxies": [
+      {
+        "host": "http://admin.local:5041",
+        "status": "UP",
+        "health_check_enabled": true
+      },
+      {
+        "host": "https://admin-backup.local:5042",
+        "status": "UP",
+        "health_check_enabled": false
+      }
+    ]
+  },
+  {
+    "path": "/api/*",
+    "failover_proxies": [
+      {
+        "host": "http://api-primary.local:5031",
+        "status": "UP",
+        "health_check_enabled": true
+      },
+      {
+        "host": "http://api-secondary.local:5032",
+        "status": "UP",
+        "health_check_enabled": false
+      }
+    ]
+  },
+  {
+    "path": "/gateway/*",
+    "failover_proxies": [
+      {
+        "host": "http://gateway1.local:5021",
+        "status": "UP",
+        "health_check_enabled": true
+      },
+      {
+        "host": "http://gateway2.local:5022",
+        "status": "UP",
+        "health_check_enabled": true
+      },
+      {
+        "host": "http://gateway3.local:5023",
+        "status": "UP",
+        "health_check_enabled": true
+      }
+    ]
+  }
+]

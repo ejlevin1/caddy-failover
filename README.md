@@ -14,6 +14,87 @@ A Caddy plugin that provides intelligent failover between multiple upstream serv
 - **Environment variables**: Supports environment variable expansion in upstream URLs and header values
 - **Debug logging**: Comprehensive logging for troubleshooting upstream selection
 
+## Testing
+
+This plugin uses Go's standard testing framework with comprehensive unit, integration, and benchmark tests.
+
+### Test Structure
+
+```
+.
+├── failover_test.go            # Core unit tests for registry and path handling
+├── failover_handler_test.go    # HTTP handler functionality tests
+├── failover_integration_test.go # Integration tests with full Caddy server
+├── failover_benchmark_test.go  # Performance benchmarks
+├── test_helpers.go             # Shared test utilities and helpers
+└── testdata/                   # Test fixtures
+    ├── basic.Caddyfile         # Basic configuration for testing
+    ├── complex.Caddyfile      # Complex multi-path configuration
+    └── expected_status.json   # Expected status response fixture
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+go test ./...
+
+# Run with coverage
+go test -cover ./...
+
+# Run with race detection
+go test -race ./...
+
+# Run specific test
+go test -run TestProxyRegistry
+
+# Run benchmarks
+go test -bench=. -benchmem
+
+# Run integration tests only
+go test -run Integration
+
+# Generate coverage report
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+```
+
+### Test Categories
+
+1. **Unit Tests** (`failover_test.go`): Test individual components like registry, path handling, and configuration parsing
+2. **Handler Tests** (`failover_handler_test.go`): Test HTTP request handling, headers, retries, and concurrent access
+3. **Integration Tests** (`failover_integration_test.go`): Test full Caddy server with the plugin configured
+4. **Benchmarks** (`failover_benchmark_test.go`): Measure performance of critical paths
+
+### Writing Tests
+
+Tests follow Go best practices:
+- Table-driven tests for comprehensive coverage
+- Test helpers for reducing boilerplate
+- Mock servers for testing HTTP interactions
+- Proper cleanup with `t.Cleanup()`
+- Concurrent testing where appropriate
+
+Example test structure:
+```go
+func TestFeature(t *testing.T) {
+    tests := []struct {
+        name     string
+        input    someType
+        expected expectedType
+    }{
+        {"test case 1", input1, expected1},
+        {"test case 2", input2, expected2},
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            // test implementation
+        })
+    }
+}
+```
+
 ## Installation
 
 ### Using xcaddy

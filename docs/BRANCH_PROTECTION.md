@@ -1,6 +1,6 @@
 # Branch Protection Setup
 
-This repository uses automated branch protection to ensure code quality and prevent accidental direct pushes to the main branch.
+This repository uses branch protection to ensure code quality and prevent accidental direct pushes to the main branch.
 
 ## Automated Setup
 
@@ -12,8 +12,8 @@ The easiest way to configure branch protection is using our setup script:
 
 This script will:
 1. Guide you through creating a Personal Access Token (PAT)
-2. Add it as a repository secret
-3. Test the branch protection configuration
+2. Save it as a repository secret (for future use)
+3. Configure branch protection rules directly using the GitHub API
 
 ## Manual Setup
 
@@ -44,12 +44,14 @@ Or via GitHub UI:
 4. Value: Your PAT from Step 1
 5. Click "Add secret"
 
-### Step 3: Trigger the Workflow
+### Step 3: Run the Setup Script
 
-The branch protection workflow will run automatically on the next push to main, or you can trigger it manually:
+Run the setup script and choose option 2 to configure protection with your PAT:
 
 ```bash
-gh workflow run branch-protection.yml
+./scripts/setup-branch-protection.sh
+# Choose option 2
+# Enter your PAT when prompted
 ```
 
 ## Branch Protection Rules
@@ -76,16 +78,16 @@ The repository owner (`ejlevin1`) and the `semantic-release-bot` can bypass PR r
 If you see a 403 error, it means the token doesn't have sufficient permissions:
 
 1. Verify your PAT has both `repo` and `admin:repo_hook` scopes
-2. Make sure the `ADMIN_PAT` secret is properly set
+2. Make sure you're entering the correct PAT
 3. Check that you're the repository owner or have admin access
 
-### Workflow Not Found
+### Script Not Executable
 
-If the workflow can't be found:
+If you get a permission denied error when running the script:
 
-1. Make sure you're on the main branch
-2. Check that `.github/workflows/branch-protection.yml` exists
-3. Push any pending changes to trigger workflow discovery
+```bash
+chmod +x ./scripts/setup-branch-protection.sh
+```
 
 ### Testing Your Setup
 

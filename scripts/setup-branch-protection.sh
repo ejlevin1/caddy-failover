@@ -80,51 +80,97 @@ create_pat() {
 
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✅ PAT successfully added as ADMIN_PAT secret${NC}"
+
+        # Now configure branch protection with the PAT
+        echo ""
+        echo "Now configuring branch protection with your new PAT..."
+        configure_protection "$PAT"
     else
         echo -e "${RED}❌ Failed to add secret${NC}"
         exit 1
     fi
 }
 
-# Function to test branch protection
-test_protection() {
+# Function to configure branch protection directly
+configure_protection() {
     echo ""
-    echo "Testing branch protection configuration..."
+    echo "Configuring branch protection directly..."
     echo ""
 
-    # Trigger the workflow
-    gh workflow run branch-protection.yml --repo="$REPO_OWNER/$REPO_NAME"
-
-    echo "Workflow triggered. Waiting for completion..."
-    sleep 5
-
-    # Check workflow status
-    RUN_ID=$(gh run list --workflow=branch-protection.yml --limit=1 --json databaseId -q '.[0].databaseId' --repo="$REPO_OWNER/$REPO_NAME")
-
-    if [ -n "$RUN_ID" ]; then
-        echo "Watching workflow run #$RUN_ID..."
-        gh run watch "$RUN_ID" --repo="$REPO_OWNER/$REPO_NAME"
-
-        # Check if successful
-        STATUS=$(gh run view "$RUN_ID" --json conclusion -q .conclusion --repo="$REPO_OWNER/$REPO_NAME")
-
-        if [ "$STATUS" = "success" ]; then
-            echo -e "${GREEN}✅ Branch protection configured successfully!${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Workflow completed with status: $STATUS${NC}"
-            echo "Check the workflow logs for details:"
-            echo "gh run view $RUN_ID --repo=$REPO_OWNER/$REPO_NAME"
-        fi
+    # Ask for PAT if not provided
+    if [ -z "$1" ]; then
+        echo "Note: Branch protection requires your PAT with admin permissions."
+        read -sp "Enter your ADMIN_PAT: " PAT
+        echo ""
     else
-        echo -e "${YELLOW}⚠️  Could not find workflow run${NC}"
+        PAT="$1"
+    fi
+
+    if [ -z "$PAT" ]; then
+        echo -e "${RED}❌ No token provided${NC}"
+        return 1
+    fi
+
+    echo "Applying branch protection rules to main branch..."
+
+    # Configure branch protection using the PAT
+    RESPONSE=$(curl -s -X PUT \
+        -H "Authorization: token $PAT" \
+        -H "Accept: application/vnd.github.v3+json" \
+        "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/branches/main/protection" \
+        -d '{
+          "required_status_checks": {
+            "strict": true,
+            "contexts": ["test", "build", "commitlint"]
+          },
+          "enforce_admins": false,
+          "required_pull_request_reviews": {
+            "required_approving_review_count": 1,
+            "dismiss_stale_reviews": true,
+            "require_code_owner_reviews": true,
+            "require_last_push_approval": false,
+            "bypass_pull_request_allowances": {
+              "users": ["ejlevin1", "semantic-release-bot"],
+              "teams": [],
+              "apps": []
+            }
+          },
+          "restrictions": null,
+          "allow_force_pushes": false,
+          "allow_deletions": false,
+          "block_creations": false,
+          "required_conversation_resolution": true,
+          "lock_branch": false,
+          "allow_fork_syncing": false
+        }')
+
+    # Check if successful
+    if echo "$RESPONSE" | grep -q '"url"'; then
+        echo -e "${GREEN}✅ Branch protection configured successfully!${NC}"
+        echo ""
+        echo "Protection rules applied:"
+        echo "  ✓ Require pull request reviews (1 approval)"
+        echo "  ✓ Dismiss stale reviews on new commits"
+        echo "  ✓ Require CODEOWNERS review"
+        echo "  ✓ Require status checks: test, build, commitlint"
+        echo "  ✓ Require branches to be up to date"
+        echo "  ✓ Require conversation resolution"
+        echo "  ✓ No force pushes allowed"
+        echo "  ✓ No deletions allowed"
+        return 0
+    else
+        echo -e "${RED}❌ Failed to configure branch protection${NC}"
+        echo "Error response:"
+        echo "$RESPONSE" | python -m json.tool 2>/dev/null || echo "$RESPONSE"
+        return 1
     fi
 }
 
 # Main menu
 echo "What would you like to do?"
 echo ""
-echo "1) Create and configure Personal Access Token"
-echo "2) Test existing branch protection setup"
+echo "1) Create PAT and configure branch protection"
+echo "2) Configure branch protection (with existing PAT)"
 echo "3) View current branch protection status"
 echo "4) Exit"
 echo ""
@@ -133,15 +179,14 @@ read -p "Select an option (1-4): " choice
 case $choice in
     1)
         create_pat
-        test_protection
         ;;
     2)
-        test_protection
+        configure_protection
         ;;
     3)
         echo ""
         echo "Current branch protection for main branch:"
-        gh api repos/$REPO_OWNER/$REPO_NAME/branches/main/protection 2>/dev/null | jq '.' || echo -e "${YELLOW}No branch protection configured${NC}"
+        gh api repos/$REPO_OWNER/$REPO_NAME/branches/main/protection 2>/dev/null | python -m json.tool 2>/dev/null || echo -e "${YELLOW}No branch protection configured${NC}"
         ;;
     4)
         echo "Exiting..."

@@ -35,7 +35,7 @@ If you prefer to set up manually:
 
 1. Go to [GitHub Settings → Developer settings → Personal access tokens](https://github.com/settings/tokens)
 2. Click "Generate new token (classic)"
-3. Name it: `caddy-failover-branch-protection`
+3. Name it: `branch-protection-token` (or any descriptive name)
 4. Select these scopes:
    - ✅ `repo` (Full control of private repositories)
    - ✅ `admin:repo_hook` (Full control of repository hooks)
@@ -81,7 +81,7 @@ Once configured, the main branch will have these protections:
 
 ### Bypass for Repository Owner
 
-The repository owner (`ejlevin1`) and the `semantic-release-bot` can bypass PR requirements for emergency fixes and automated releases.
+The repository owner and the `semantic-release-bot` can bypass PR requirements for emergency fixes and automated releases.
 
 ## Troubleshooting
 

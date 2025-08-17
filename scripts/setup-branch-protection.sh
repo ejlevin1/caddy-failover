@@ -126,6 +126,9 @@ echo ""
 REPO_OWNER=$(gh repo view --json owner -q .owner.login)
 REPO_NAME=$(gh repo view --json name -q .name)
 
+# Configuration - use repository name for token name
+TOKEN_NAME="${REPO_NAME:-branch-protection}-automation"
+
 echo "Repository: $REPO_OWNER/$REPO_NAME"
 echo ""
 
@@ -138,7 +141,7 @@ create_pat() {
     echo -e "${YELLOW}Steps:${NC}"
     echo "1. Opening GitHub settings in your browser..."
     echo "2. Click 'Generate new token (classic)'"
-    echo "3. Name it: 'caddy-failover-branch-protection'"
+    echo "3. Name it: '$TOKEN_NAME'"
     echo "4. Select scopes:"
     echo "   ✓ repo (Full control of private repositories)"
     echo "   ✓ admin:repo_hook (Full control of repository hooks)"
@@ -148,12 +151,12 @@ create_pat() {
 
     # Open GitHub token creation page
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        open "https://github.com/settings/tokens/new?description=caddy-failover-branch-protection&scopes=repo,admin:repo_hook"
+        open "https://github.com/settings/tokens/new?description=${TOKEN_NAME}&scopes=repo,admin:repo_hook"
     elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        xdg-open "https://github.com/settings/tokens/new?description=caddy-failover-branch-protection&scopes=repo,admin:repo_hook"
+        xdg-open "https://github.com/settings/tokens/new?description=${TOKEN_NAME}&scopes=repo,admin:repo_hook"
     else
         echo "Please open this URL in your browser:"
-        echo "https://github.com/settings/tokens/new?description=caddy-failover-branch-protection&scopes=repo,admin:repo_hook"
+        echo "https://github.com/settings/tokens/new?description=${TOKEN_NAME}&scopes=repo,admin:repo_hook"
     fi
 
     echo ""

@@ -1,3 +1,4 @@
+// Package caddyfailover provides automatic failover capabilities for Caddy server
 package caddyfailover
 
 import (

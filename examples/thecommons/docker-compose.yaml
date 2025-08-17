@@ -1,7 +1,9 @@
 services:
   caddy:
-    image: ghcr.io/ejlevin1/caddy-failover:1.8.0-loaded
-    container_name: thecommons-caddy
+    build:
+      context: ../..  # Points to the root of caddy-failover repository
+      dockerfile: Dockerfile
+      target: standard  # Use the standard caddy target (not loaded)
     labels:
       # Logging configuration
       - "dev.dozzle.group=infrastructure"

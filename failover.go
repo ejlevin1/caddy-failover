@@ -19,6 +19,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/ejlevin1/caddy-failover/api_registrar"
 	"go.uber.org/zap"
 )
 
@@ -27,6 +28,9 @@ func init() {
 	caddy.RegisterModule(&FailoverStatusHandler{})
 	httpcaddyfile.RegisterHandlerDirective("failover_proxy", parseFailoverProxy)
 	httpcaddyfile.RegisterHandlerDirective("failover_status", parseFailoverStatus)
+
+	// Register failover API specification
+	api_registrar.RegisterApiSpec("failover_api", getFailoverApiSpec)
 }
 
 var (
@@ -1005,6 +1009,30 @@ func parseFailoverStatus(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, e
 func hashString(s string) string {
 	h := md5.Sum([]byte(s))
 	return fmt.Sprintf("%x", h[:4]) // Use first 4 bytes for a shorter hash
+}
+
+// getFailoverApiSpec returns the failover API specification
+func getFailoverApiSpec() *api_registrar.CaddyModuleApiSpec {
+	return &api_registrar.CaddyModuleApiSpec{
+		ID:          "failover_api",
+		Title:       "Failover Status API",
+		Version:     "1.0",
+		Description: "API for monitoring and managing failover proxy status",
+		Endpoints: []api_registrar.CaddyModuleApiEndpoint{
+			{
+				Method:      "GET",
+				Path:        "/status",
+				Summary:     "Get failover proxy status",
+				Description: "Returns the current status of all registered failover proxies including their upstreams, health checks, and active states",
+				Responses: map[int]api_registrar.ResponseDef{
+					200: {
+						Description: "List of failover proxy statuses",
+						Body:        []PathStatus{},
+					},
+				},
+			},
+		},
+	}
 }
 
 // Interface guards

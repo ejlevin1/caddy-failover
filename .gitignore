@@ -43,3 +43,10 @@ build/
 # Test files
 test-caddyfile
 test.Caddyfile
+
+# Examples subdirectories (keep Caddyfile examples but ignore local configs)
+examples/*/
+!examples/*/Caddyfile
+!examples/*/docker-compose.yaml
+!examples/*/docker-compose.yml
+!examples/*/*.md

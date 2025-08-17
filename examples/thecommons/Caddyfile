@@ -6,6 +6,18 @@
 	# Order failover_proxy and failover_status
 	order failover_proxy before reverse_proxy
     order failover_status before respond
+    order caddy_api_registrar before respond
+
+    # API Registrar configuration - define which APIs to expose
+    caddy_api_registrar {
+        caddy_api {
+            path /caddy-admin
+        }
+        failover_api {
+            path /caddy/failover
+        }
+    }
+
     # Optional: enable debug logging
     # debug
 }
@@ -27,6 +39,26 @@ https://localhost:9443 {
 
     handle /caddy/failover/status {
         failover_status
+    }
+
+    # API Documentation endpoints
+    # Swagger UI interface
+    handle /api/docs {
+        caddy_api_registrar swagger-ui
+    }
+
+    # Redoc UI interface
+    handle /api/docs/redoc {
+        caddy_api_registrar redoc
+    }
+
+    # Raw OpenAPI JSON endpoints
+    handle /api/docs/openapi.json {
+        caddy_api_registrar openapi-v3.0
+    }
+
+    handle /api/docs/openapi-3.1.json {
+        caddy_api_registrar openapi-v3.1
     }
 
 

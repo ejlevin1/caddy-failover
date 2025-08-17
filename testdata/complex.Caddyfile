@@ -1,0 +1,104 @@
+# Complex Caddyfile with multiple paths and health checks
+{
+    order failover_proxy before reverse_proxy
+    order failover_status before respond
+    admin :2019
+}
+
+:8080 {
+    # Authentication endpoints
+    handle /auth/* {
+        failover_proxy http://auth-primary.local:5051 http://auth-secondary.local:5052 {
+            fail_duration 5s
+            status_path /auth/*
+
+            health_check http://auth-primary.local:5051 {
+                path /health
+                interval 30s
+                timeout 5s
+                expected_status 200
+            }
+
+            health_check http://auth-secondary.local:5052 {
+                path /health
+                interval 30s
+                timeout 5s
+                expected_status 200
+            }
+
+            header_up http://auth-primary.local:5051 X-Service-Name "auth-primary"
+            header_up http://auth-secondary.local:5052 X-Service-Name "auth-secondary"
+        }
+    }
+
+    # Admin endpoints
+    handle /admin/* {
+        failover_proxy http://admin.local:5041 https://admin-backup.local:5042 {
+            fail_duration 10s
+            status_path /admin/*
+            insecure_skip_verify
+
+            health_check http://admin.local:5041 {
+                path /admin/health
+                interval 60s
+                timeout 10s
+                expected_status 204
+            }
+        }
+    }
+
+    # API endpoints with environment variables
+    handle /api/* {
+        failover_proxy {env.API_PRIMARY_URL} {env.API_SECONDARY_URL} {
+            fail_duration 3s
+            dial_timeout 1s
+            response_timeout 3s
+
+            health_check {env.API_PRIMARY_URL} {
+                path /api/health
+                interval 15s
+                timeout 2s
+                expected_status 200
+            }
+        }
+    }
+
+    # Gateway endpoints
+    handle /gateway/* {
+        failover_proxy http://gateway1.local:5021 http://gateway2.local:5022 http://gateway3.local:5023 {
+            fail_duration 2s
+            status_path /gateway/*
+
+            health_check http://gateway1.local:5021 {
+                path /gateway/health/ready
+                interval 10s
+                timeout 1s
+                expected_status 200
+            }
+
+            health_check http://gateway2.local:5022 {
+                path /gateway/health/ready
+                interval 10s
+                timeout 1s
+                expected_status 200
+            }
+
+            health_check http://gateway3.local:5023 {
+                path /gateway/health/ready
+                interval 10s
+                timeout 1s
+                expected_status 200
+            }
+        }
+    }
+
+    # Status endpoint
+    handle /status {
+        failover_status
+    }
+
+    # Default handler
+    handle {
+        respond "Not Found" 404
+    }
+}

@@ -28,6 +28,17 @@ jobs:
           private_key: ${{ secrets.SEMANTIC_RELEASE_APP_PRIVATE_KEY }}
         continue-on-error: true
 
+      - name: Check token generation
+        id: check_token
+        run: |
+          if [ -z "${{ steps.generate_token.outputs.token }}" ]; then
+            echo "::warning::GitHub App token generation failed or secrets not configured. Semantic release will skip git commits."
+            echo "has_token=false" >> $GITHUB_OUTPUT
+          else
+            echo "GitHub App token generated successfully"
+            echo "has_token=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -68,7 +79,20 @@ jobs:
           GIT_AUTHOR_EMAIL: semantic-release-bot@users.noreply.github.com
           GIT_COMMITTER_NAME: semantic-release-bot
           GIT_COMMITTER_EMAIL: semantic-release-bot@users.noreply.github.com
-        run: npx semantic-release
+        run: |
+          # Use the no-git config if GitHub App token doesn't have bypass permissions
+          # This will still create releases and tags, just not commit CHANGELOG.md
+          if [ "${{ steps.check_token.outputs.has_token }}" != "true" ]; then
+            echo "Using .releaserc-no-git.json configuration (no git commits)"
+            npx semantic-release --extends ./.releaserc-no-git.json
+          else
+            echo "Using standard .releaserc.json configuration (attempting git commits)"
+            echo "Note: This will fail if the GitHub App doesn't have branch protection bypass permissions"
+            npx semantic-release || {
+              echo "::warning::Standard release failed, likely due to branch protection. Retrying without git commits..."
+              npx semantic-release --extends ./.releaserc-no-git.json
+            }
+          fi
 
       - name: Build Caddy with plugin
         if: steps.semantic.outputs.new_release_published == 'true'

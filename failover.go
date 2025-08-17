@@ -52,10 +52,6 @@ type ProxyRegistry struct {
 
 // Register adds a proxy to the registry
 func (r *ProxyRegistry) Register(path string, proxy *FailoverProxy) {
-	if path == "" || proxy == nil {
-		return // Skip invalid registrations
-	}
-
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

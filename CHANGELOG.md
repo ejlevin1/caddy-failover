@@ -1,3 +1,10 @@
+# [1.8.0](https://github.com/ejlevin1/caddy-failover/compare/v1.7.0...v1.8.0) (2025-08-17)
+
+
+### Features
+
+* add Docker loaded images with additional Caddy plugins ([2cd2936](https://github.com/ejlevin1/caddy-failover/commit/2cd2936d3b4bd2dd8edef1e8dbdcc8c5cc07d455))
+
 # [1.7.0](https://github.com/ejlevin1/caddy-failover/compare/v1.6.3...v1.7.0) (2025-08-17)
 
 

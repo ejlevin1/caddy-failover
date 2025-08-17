@@ -1,3 +1,32 @@
+# [1.7.0](https://github.com/ejlevin1/caddy-failover/compare/v1.6.3...v1.7.0) (2025-08-17)
+
+
+### Bug Fixes
+
+* add validation for proxy registration to prevent nil pointer errors ([9b65b1a](https://github.com/ejlevin1/caddy-failover/commit/9b65b1a1082b7c72acbbf91d18316bcc79e0b18a))
+* automate branch protection setup with PAT support ([3a666f0](https://github.com/ejlevin1/caddy-failover/commit/3a666f0490e1e93bdbd0a077130e21aa0c48b97c))
+* correct GitHub Actions job dependency from test-plugin to test ([55c7260](https://github.com/ejlevin1/caddy-failover/commit/55c72605dd60ada614dda65cfaa7f2018d3f1cf1))
+* handle branch protection in release workflow ([7e939c0](https://github.com/ejlevin1/caddy-failover/commit/7e939c03a073cd09bd52972962890cebdcea46f9))
+* improve test runner script and fix integration test ([ce6a751](https://github.com/ejlevin1/caddy-failover/commit/ce6a751f099fc2bff70f60ac0cb6124d97a3f252))
+* improve TestConcurrentHealthChecks reliability ([a7e7110](https://github.com/ejlevin1/caddy-failover/commit/a7e7110d1e78e30a6cc982996f522d73ea6387a5))
+* make browser opening optional in test script for CI ([63cec7a](https://github.com/ejlevin1/caddy-failover/commit/63cec7ad918f2eb0b07979bb0d8bc2630a097830))
+* make token name configurable and remove hardcoded values ([04470a5](https://github.com/ejlevin1/caddy-failover/commit/04470a5bacde2e31d4ea1d31b0388ac94539156a))
+* remove Go 1.21 from test matrix to match go.mod requirement ([2bd8bcb](https://github.com/ejlevin1/caddy-failover/commit/2bd8bcb811a8d01311a39a774227707df6e1e8ea))
+* resolve data race conditions in tests ([8da8f09](https://github.com/ejlevin1/caddy-failover/commit/8da8f09555ddd685156c5cc6c9fe0b2c7ee6cb31))
+
+
+### Features
+
+* add comprehensive test runner script with multiple test modes ([6d26ab8](https://github.com/ejlevin1/caddy-failover/commit/6d26ab8cb7711ad753d7d1e958fd5f834b97fa63))
+* enhance branch protection script with CLI options and fixes ([628f024](https://github.com/ejlevin1/caddy-failover/commit/628f024d7e85399c22b318de138e1d51efc39d72))
+* enhance test infrastructure with formatted coverage reports ([82c3554](https://github.com/ejlevin1/caddy-failover/commit/82c3554dad71a67a21702b168957b57ab9561e90))
+* restructure tests with preferred Go testing approaches ([82c304e](https://github.com/ejlevin1/caddy-failover/commit/82c304e8d448f81a81fbfb13343c949b3001431c))
+
+
+### Reverts
+
+* remove proxy registration validation that broke tests ([c825a9b](https://github.com/ejlevin1/caddy-failover/commit/c825a9b32e69c7798a3f92c78a48e93afe889989))
+
 ## [1.6.3](https://github.com/ejlevin1/caddy-failover/compare/v1.6.2...v1.6.3) (2025-08-16)
 
 

@@ -171,7 +171,32 @@ jobs:
             type=semver,pattern={{major}},value=v${{ steps.semantic.outputs.new_release_version }}
             type=raw,value=latest
 
-      - name: Build and push Docker image
+      # Build builder stages separately for caching
+      - name: Build builder cache stages
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          target: builder
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          outputs: type=cacheonly
+
+      - name: Build builder-loaded cache stages
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          target: builder-loaded
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          outputs: type=cacheonly
+
+      - name: Build and push standard Docker image
         if: steps.semantic.outputs.new_release_published == 'true'
         id: docker_build
         uses: docker/build-push-action@v5
@@ -179,21 +204,56 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          target: standard
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
           build-args: |
-            GIT_COMMIT=${{ github.sha }}
-            GIT_TAG=v${{ steps.semantic.outputs.new_release_version }}
-            GIT_BRANCH=${{ github.ref_name }}
-            BUILD_DATE=${{ github.event.repository.updated_at }}
             VERSION=${{ steps.semantic.outputs.new_release_version }}
+            GIT_TAG=v${{ steps.semantic.outputs.new_release_version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Generate Docker image attestation
+      - name: Extract Docker metadata for -loaded variant
+        if: steps.semantic.outputs.new_release_published == 'true'
+        id: docker_meta_loaded
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/ejlevin1/caddy-failover
+          tags: |
+            type=semver,pattern={{version}}-loaded,value=v${{ steps.semantic.outputs.new_release_version }}
+            type=semver,pattern={{major}}.{{minor}}-loaded,value=v${{ steps.semantic.outputs.new_release_version }}
+            type=semver,pattern={{major}}-loaded,value=v${{ steps.semantic.outputs.new_release_version }}
+            type=raw,value=latest-loaded
+
+      - name: Build and push -loaded Docker image
+        if: steps.semantic.outputs.new_release_published == 'true'
+        id: docker_build_loaded
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: loaded
+          tags: ${{ steps.docker_meta_loaded.outputs.tags }}
+          labels: ${{ steps.docker_meta_loaded.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.semantic.outputs.new_release_version }}
+            GIT_TAG=v${{ steps.semantic.outputs.new_release_version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate Docker image attestation (standard)
         if: steps.semantic.outputs.new_release_published == 'true'
         uses: actions/attest-build-provenance@v1
         with:
           subject-name: ghcr.io/ejlevin1/caddy-failover
           subject-digest: ${{ steps.docker_build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Generate Docker image attestation (-loaded)
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ghcr.io/ejlevin1/caddy-failover
+          subject-digest: ${{ steps.docker_build_loaded.outputs.digest }}
           push-to-registry: true

@@ -12,6 +12,11 @@ caddy-*
 
 # Output of go coverage
 *.out
+coverage.html
+coverage.txt
+*.coverprofile
+cover.json
+cover.html
 
 # Dependency directories
 vendor/

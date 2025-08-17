@@ -297,7 +297,8 @@ func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 	f.HealthChecks = expandedHealthChecks
 
 	// Set health check defaults and start health checkers
-	for upstream, hc := range f.HealthChecks {
+	// Initialize health check defaults (but don't start goroutines yet)
+	for _, hc := range f.HealthChecks {
 		if hc.Interval == 0 {
 			hc.Interval = caddy.Duration(30 * time.Second)
 		}
@@ -310,10 +311,6 @@ func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 		if hc.Path == "" {
 			hc.Path = "/health"
 		}
-
-		// Start health check goroutine for this upstream
-		f.wg.Add(1)
-		go f.runHealthCheck(upstream, hc)
 	}
 
 	// Create HTTP transport
@@ -352,6 +349,12 @@ func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
+	}
+
+	// Now start health check goroutines after clients are initialized
+	for upstream, hc := range f.HealthChecks {
+		f.wg.Add(1)
+		go f.runHealthCheck(upstream, hc)
 	}
 
 	return nil

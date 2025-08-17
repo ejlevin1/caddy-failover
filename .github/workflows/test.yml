@@ -5,11 +5,86 @@ on:
     branches:
       - main
       - master
+  push:
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 jobs:
-  test-plugin:
+  test:
+    name: Run Tests
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.21', '1.22', '1.23']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Get dependencies
+        run: |
+          go mod download
+          go mod verify
+
+      - name: Make test script executable
+        run: chmod +x ./scripts/test.sh
+
+      - name: Run go fmt
+        run: |
+          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+            echo "Please run 'gofmt -s -w .' to format your code"
+            gofmt -s -d .
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run unit tests with coverage
+        run: ./scripts/test.sh unit -c -r -n
+
+      - name: Run quick tests
+        run: ./scripts/test.sh quick
+
+      - name: Upload coverage to Codecov
+        if: matrix.go-version == '1.22'
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.out
+          fail_ci_if_error: false
+
+  benchmark:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Make test script executable
+        run: chmod +x ./scripts/test.sh
+
+      - name: Run benchmarks
+        run: ./scripts/test.sh benchmark
+
+  build-and-validate:
+    name: Build and Validate Plugin
+    runs-on: ubuntu-latest
+    needs: test
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -31,34 +106,69 @@ jobs:
         run: |
           ./caddy version
           ./caddy list-modules | grep failover_proxy
+          ./caddy list-modules | grep failover_status
 
-      - name: Validate Caddyfile
+      - name: Validate basic Caddyfile
         run: |
-          cat > test.Caddyfile <<EOF
-          {
-              order failover_proxy before reverse_proxy
-          }
-          :8080 {
-              handle {
-                  failover_proxy http://httpbin.org https://httpbin.org {
-                      fail_duration 3s
-                  }
-              }
-          }
-          EOF
-          ./caddy validate --config test.Caddyfile --adapter caddyfile
+          ./caddy validate --config testdata/basic.Caddyfile --adapter caddyfile
 
+      - name: Validate complex Caddyfile
+        run: |
+          # Set dummy environment variables for complex Caddyfile
+          export API_PRIMARY_URL=http://localhost:5031
+          export API_SECONDARY_URL=http://localhost:5032
+          ./caddy validate --config testdata/complex.Caddyfile --adapter caddyfile
+
+
+  coverage-report:
+    name: Generate Coverage Report
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Make test script executable
+        run: chmod +x ./scripts/test.sh
+
+      - name: Run tests with coverage
+        run: ./scripts/test.sh coverage -n
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.out
+          fail_ci_if_error: true
 
   integration-test:
+    name: Run Integration Tests
     runs-on: ubuntu-latest
-    needs: test-plugin
+    needs: test
     if: github.event_name == 'pull_request'
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run integration tests
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Make test script executable
+        run: chmod +x ./scripts/test.sh
+
+      - name: Install xcaddy
+        run: go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+      - name: Run integration tests with verbose output
         run: |
-          chmod +x test/test.sh
-          ./test/test.sh
+          export PATH=$PATH:$(go env GOPATH)/bin
+          ./scripts/test.sh integration -v

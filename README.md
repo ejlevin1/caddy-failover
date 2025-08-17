@@ -1,5 +1,10 @@
 # Caddy Failover Plugin
 
+[![Test Plugin](https://github.com/ejlevin1/caddy-failover/actions/workflows/test.yml/badge.svg)](https://github.com/ejlevin1/caddy-failover/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/ejlevin1/caddy-failover/branch/main/graph/badge.svg)](https://codecov.io/gh/ejlevin1/caddy-failover)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ejlevin1/caddy-failover)](https://goreportcard.com/report/github.com/ejlevin1/caddy-failover)
+[![Go Reference](https://pkg.go.dev/badge/github.com/ejlevin1/caddy-failover.svg)](https://pkg.go.dev/github.com/ejlevin1/caddy-failover)
+
 A Caddy plugin that provides intelligent failover between multiple upstream servers with support for mixed HTTP/HTTPS schemes.
 
 ## Features
@@ -13,6 +18,183 @@ A Caddy plugin that provides intelligent failover between multiple upstream serv
 - **Path base support**: Upstreams can have different base paths that are preserved in routing
 - **Environment variables**: Supports environment variable expansion in upstream URLs and header values
 - **Debug logging**: Comprehensive logging for troubleshooting upstream selection
+
+## Testing
+
+The plugin includes comprehensive tests with a convenient test runner script.
+
+### Quick Start
+
+```bash
+# Run all tests
+./scripts/test.sh all
+
+# Run unit tests only
+./scripts/test.sh unit
+
+# Run with coverage report
+./scripts/test.sh coverage
+
+# Run with race detector
+./scripts/test.sh race
+
+# Run benchmarks
+./scripts/test.sh benchmark
+
+# Run integration tests
+./scripts/test.sh integration
+
+# Test status endpoint manually
+./scripts/test.sh status
+```
+
+### Test Commands
+
+The `scripts/test.sh` script provides the following commands:
+
+| Command | Description |
+|---------|-------------|
+| `unit` | Run unit tests only |
+| `integration` | Run integration tests (builds Caddy with plugin) |
+| `benchmark` | Run performance benchmarks |
+| `all` | Run all tests (unit + integration) |
+| `coverage` | Run tests with coverage report (generates HTML report) |
+| `race` | Run tests with race detector |
+| `quick` | Run quick tests (excludes integration tests) |
+| `status` | Test the failover status endpoint manually |
+| `help` | Show help message |
+
+### Options
+
+- `-v, --verbose`: Run with verbose output
+- `-c, --coverage`: Generate coverage report
+- `-r, --race`: Enable race detector
+
+### Examples
+
+```bash
+# Run unit tests with verbose output
+./scripts/test.sh unit -v
+
+# Run all tests with coverage and race detection
+./scripts/test.sh all -c -r
+
+# Quick test during development (no integration tests)
+./scripts/test.sh quick
+
+# Run benchmarks
+./scripts/test.sh benchmark
+```
+
+### Manual Test Commands
+
+If you prefer running tests directly with `go test`:
+
+```bash
+# Run all tests
+go test ./...
+
+# Run with race detection
+go test -race ./...
+
+# Run with coverage
+go test -coverprofile=coverage.out -covermode=atomic ./...
+go tool cover -html=coverage.out -o coverage.html
+
+# Run benchmarks
+go test -bench=. -benchmem -run=^$ ./...
+
+# Run only unit tests (skip integration)
+go test -short ./...
+
+# Run specific test
+go test -v -run TestProxyRegistry ./...
+```
+
+### Test Structure
+
+```
+.
+├── failover_test.go           # Core unit tests
+├── failover_integration_test.go # Integration tests with caddytest
+├── failover_benchmark_test.go  # Performance benchmarks
+├── failover_handler_test.go    # HTTP handler tests
+├── test_helpers.go             # Shared test utilities
+├── testdata/                   # Test fixtures
+│   ├── basic.Caddyfile
+│   ├── complex.Caddyfile
+│   └── expected_status.json
+├── scripts/
+│   └── test.sh                # Test runner script
+└── test/
+    └── test.sh                # Docker-based integration tests
+```
+
+### Docker Integration Tests
+
+For full end-to-end testing with Docker containers:
+
+```bash
+# Run Docker-based integration tests
+make docker-test
+# or directly:
+./test/test.sh
+```
+
+The Docker tests complement the Go tests by:
+- Building a real Caddy binary with the plugin
+- Running Caddy in a Docker container
+- Testing against actual mock HTTP servers in containers
+- Validating networking, failover, and header propagation
+- Testing the plugin in a production-like environment
+
+Additional Docker test scripts:
+- `./test/test-failover-status.sh` - Tests the status endpoint
+- `./test/test-failover-logs.sh` - Validates logging and health check headers
+
+### CI/CD Testing
+
+GitHub Actions automatically runs tests using the `scripts/test.sh` script:
+- **Unit tests**: Run on every push and PR with coverage and race detection
+- **Integration tests**: Run on pull requests with verbose output showing status endpoint
+- **Benchmarks**: Run after unit tests pass
+- **Coverage reports**: Generated and uploaded to Codecov
+
+### Test Categories
+
+1. **Unit Tests** (`failover_test.go`): Test individual components like registry, path handling, and configuration parsing
+2. **Handler Tests** (`failover_handler_test.go`): Test HTTP request handling, headers, retries, and concurrent access
+3. **Integration Tests** (`failover_integration_test.go`): Test full Caddy server with the plugin configured
+4. **Benchmarks** (`failover_benchmark_test.go`): Measure performance of critical paths
+
+### Writing Tests
+
+Tests follow Go best practices:
+- Table-driven tests for comprehensive coverage
+- Test helpers for reducing boilerplate
+- Mock servers for testing HTTP interactions
+- Proper cleanup with `t.Cleanup()`
+- Concurrent testing where appropriate
+
+Example test structure:
+```go
+func TestFeature(t *testing.T) {
+    tests := []struct {
+        name     string
+        input    someType
+        expected expectedType
+    }{
+        {"test case 1", input1, expected1},
+        {"test case 2", input2, expected2},
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            // test implementation
+        })
+    }
+}
+```
 
 ## Installation
 

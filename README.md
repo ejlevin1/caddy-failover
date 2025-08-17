@@ -233,6 +233,100 @@ Or build your own:
 docker build -t caddy-failover .
 ```
 
+#### Extended Docker Images (-loaded variant)
+
+In addition to the standard images, we provide `-loaded` variants that include additional Caddy plugins pre-installed:
+
+- [caddy-admin-ui](https://github.com/gsmlg-dev/caddy-admin-ui) - Web UI for managing Caddy configuration
+- [caddy-docker-proxy](https://github.com/lucaslorentz/caddy-docker-proxy) - Automatic reverse proxy for Docker containers
+
+These images follow the same versioning pattern with a `-loaded` suffix:
+
+```bash
+# Latest loaded version
+docker pull ghcr.io/ejlevin1/caddy-failover:latest-loaded
+
+# Specific loaded version
+docker pull ghcr.io/ejlevin1/caddy-failover:1.6.1-loaded
+
+# Major loaded version (gets latest 1.x.x-loaded)
+docker pull ghcr.io/ejlevin1/caddy-failover:1-loaded
+```
+
+##### Using the Admin UI Plugin
+
+The caddy-admin-ui plugin provides a web interface for the Caddy admin API. To use it, configure it in your Caddyfile:
+
+```caddyfile
+{
+    admin :2019
+    order failover_proxy before reverse_proxy
+}
+
+:8080 {
+    route {
+        caddy_admin_ui
+        reverse_proxy localhost:2019 {
+            header_up Host localhost:2019
+        }
+    }
+}
+
+# Your regular site configuration
+https://localhost:443 {
+    # ... your failover_proxy configuration ...
+}
+```
+
+Then access the admin UI at `http://localhost:8080`.
+
+##### Using the Docker Proxy Plugin
+
+The caddy-docker-proxy plugin allows Caddy to automatically configure reverse proxy routes based on Docker container labels. To use it:
+
+1. Run the Caddy container with access to the Docker socket:
+
+```yaml
+version: '3.8'
+
+services:
+  caddy:
+    image: ghcr.io/ejlevin1/caddy-failover:latest-loaded
+    container_name: caddy-failover-loaded
+    ports:
+      - "80:80"
+      - "443:443"
+      - "2019:2019"  # Admin API
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      CADDY_DOCKER_CADDYFILE_PATH: /etc/caddy/Caddyfile
+    restart: unless-stopped
+    command: ["caddy", "docker-proxy"]
+
+volumes:
+  caddy_data:
+  caddy_config:
+```
+
+2. Add labels to your containers:
+
+```yaml
+  app:
+    image: your-app:latest
+    labels:
+      caddy: app.example.com
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      caddy.handle_path: /api/*
+      caddy.handle_path.0.failover_proxy: "{{upstreams 8080}} http://backup:8080"
+```
+
+The Docker proxy will automatically detect container changes and update Caddy's configuration.
+
+**Note:** When using the Docker proxy plugin, ensure proper network configuration and security measures, as it requires access to the Docker socket.
+
 ## Usage
 
 ### Caddyfile Configuration

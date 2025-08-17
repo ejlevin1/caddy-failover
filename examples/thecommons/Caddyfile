@@ -1,0 +1,351 @@
+# Caddy Configuration with Custom Failover Plugin
+# Global admin API configuration
+{
+	admin :2019
+
+	# Order failover_proxy and failover_status
+	order failover_proxy before reverse_proxy
+    order failover_status before respond
+    # Optional: enable debug logging
+    # debug
+}
+
+# HTTPS Server on port 9443
+https://localhost:9443 {
+	# Caddy will automatically generate self-signed certificates for localhost
+	# For production domains, Caddy will automatically obtain Let's Encrypt certificates
+
+	# Manual certificate loading (commented out for reference)
+	# tls /certs/aspnet.pem /certs/aspnet.key
+
+    # route {
+    #    caddy_admin_ui
+    #    reverse_proxy localhost:2019 {
+    #        header_up Host localhost:2019
+    #    }
+    # }
+
+    handle /caddy/failover/status {
+        failover_status
+    }
+
+
+	# ===========================
+	# ADMIN API SERVICE (/admin/*)
+	# ===========================
+
+	handle /admin/* {
+		failover_proxy http://host.docker.internal:5041 http://admin_api:80 https://dev.portal.the-commons.app {
+			# IMPORTANT: status_path is required for the failover status endpoint to track this proxy
+			# Without it, the proxy won't appear in /caddy/failover/status
+			# The plugin will auto-generate a path if not specified, but explicit is better
+			status_path /admin/*
+			fail_duration 3s
+			dial_timeout 2s
+			response_timeout 5s
+			insecure_skip_verify
+
+			# Health checks for primary (local IDE)
+			health_check http://host.docker.internal:5041 {
+				path /health/ready
+				interval 10s
+				timeout 5s
+				expected_status 200
+			}
+
+			# Health checks for docker container
+			health_check http://admin_api:80 {
+				path /health/ready
+				interval 10s
+				timeout 5s
+				expected_status 200
+			}
+
+			# Health checks for fallback (remote)
+			health_check https://dev.portal.the-commons.app {
+				path /admin/health/live
+				interval 60s
+				timeout 10s
+				expected_status 200
+			}
+
+			# Headers for HTTP upstream (IDE)
+			header_up http://host.docker.internal:5041 X-Service-Track caddy
+			header_up http://host.docker.internal:5041 X-Ingress caddy
+
+			# Headers for HTTPS upstream (Remote)
+			header_up https://dev.portal.the-commons.app X-Service-Track caddy-fallback
+			header_up https://dev.portal.the-commons.app X-Ingress caddy
+			header_up https://dev.portal.the-commons.app Host dev.portal.the-commons.app
+		}
+	}
+
+	# ===========================
+	# GATEWAY SERVICE (/graphql*, /gateway/*)
+	# ===========================
+	handle /graphql* {
+		failover_proxy http://host.docker.internal:5021 http://gateway:80 {
+			status_path /graphql*
+			fail_duration 3s
+			dial_timeout 2s
+			response_timeout 5s
+			insecure_skip_verify
+
+			# Health checks for primary (local IDE)
+			health_check http://host.docker.internal:5021 {
+				path /gateway/health/ready
+				interval 30s
+				timeout 5s
+				expected_status 200
+			}
+
+			# Health checks for docker container
+			health_check http://gateway:80 {
+				path /health/ready
+				interval 10s
+				timeout 5s
+				expected_status 200
+			}
+
+			header_up http://host.docker.internal:5021 X-Service-Track caddy
+			header_up http://host.docker.internal:5021 X-Ingress caddy
+		}
+	}
+
+	handle /gateway/* {
+		failover_proxy http://host.docker.internal:5021 http://gateway:80 {
+			status_path /gateway/*
+			fail_duration 3s
+			dial_timeout 2s
+			response_timeout 5s
+			insecure_skip_verify
+
+			# Health checks for primary (local IDE)
+			health_check http://host.docker.internal:5021 {
+				path /gateway/health/ready
+				interval 30s
+				timeout 5s
+				expected_status 200
+			}
+
+			# Health checks for docker container
+			health_check http://gateway:80 {
+				path /health/ready
+				interval 10s
+				timeout 5s
+				expected_status 200
+			}
+
+			header_up http://host.docker.internal:5021 X-Service-Track caddy
+			header_up http://host.docker.internal:5021 X-Ingress caddy
+		}
+	}
+
+	# ===========================
+	# STUDENT API SERVICE (/student/*)
+	# ===========================
+	handle /student/* {
+		failover_proxy http://host.docker.internal:5061 http://student_api:80 https://dev.portal.the-commons.app {
+			status_path /student/*
+			fail_duration 3s
+			dial_timeout 2s
+			response_timeout 5s
+			insecure_skip_verify
+
+			# Health checks for primary (local IDE)
+			health_check http://host.docker.internal:5061 {
+				path /student/health/ready
+				interval 30s
+				timeout 5s
+				expected_status 200
+			}
+
+			# Health checks for docker container
+			health_check http://student_api:80 {
+				path /health/ready
+				interval 10s
+				timeout 5s
+				expected_status 200
+			}
+
+			# Health checks for fallback (remote)
+			health_check https://dev.portal.the-commons.app {
+				path /student/health/live
+				interval 60s
+				timeout 10s
+				expected_status 200
+			}
+
+			header_up http://host.docker.internal:5061 X-Service-Track caddy
+			header_up http://host.docker.internal:5061 X-Ingress caddy
+
+			header_up http://student_api:80 X-Service-Track caddy
+			header_up http://student_api:80 X-Ingress caddy
+
+			header_up https://dev.portal.the-commons.app X-Service-Track caddy-fallback
+			header_up https://dev.portal.the-commons.app X-Ingress caddy
+			header_up https://dev.portal.the-commons.app Host dev.portal.the-commons.app
+		}
+	}
+
+	# ===========================
+	# STUDENT AUTH SERVICE (/auth/*)
+	# ===========================
+	handle /auth/* {
+		failover_proxy http://host.docker.internal:5051 http://student_auth:80 https://dev.portal.the-commons.app {
+			status_path /auth/*
+			fail_duration 3s
+			dial_timeout 2s
+			response_timeout 5s
+			insecure_skip_verify
+
+			# Health checks for primary (local IDE)
+			health_check http://host.docker.internal:5051 {
+				path /auth/health/ready
+				interval 30s
+				timeout 5s
+				expected_status 200
+			}
+
+			# Health checks for docker container
+			health_check http://student_auth:80 {
+				path /health/ready
+				interval 10s
+				timeout 5s
+				expected_status 200
+			}
+
+			# Health checks for fallback (remote)
+			health_check https://dev.portal.the-commons.app {
+				path /auth/health/live
+				interval 60s
+				timeout 10s
+				expected_status 200
+			}
+
+			header_up http://host.docker.internal:5051 X-Service-Track caddy
+			header_up http://host.docker.internal:5051 X-Ingress caddy
+
+			header_up http://student_auth:80 X-Service-Track caddy
+			header_up http://student_auth:80 X-Ingress caddy
+
+			header_up https://dev.portal.the-commons.app X-Service-Track caddy-fallback
+			header_up https://dev.portal.the-commons.app X-Ingress caddy
+			header_up https://dev.portal.the-commons.app Host dev.portal.the-commons.app
+		}
+	}
+
+	# ===========================
+	# CMS (DIRECTUS) SERVICE (/cms/*)
+	# ===========================
+	handle /cms/* {
+		failover_proxy http://directus:8055 {
+			status_path /cms/*
+			fail_duration 3s
+			dial_timeout 2s
+			response_timeout 5s
+
+			# Health check for Directus
+			health_check http://directus:8055 {
+				path /server/health
+				interval 30s
+				timeout 5s
+				expected_status 200
+			}
+
+			header_up http://directus:8055 X-Service-Track caddy
+			header_up http://directus:8055 X-Ingress caddy
+		}
+	}
+
+	# ===========================
+	# WEB WORKER SERVICE (/web-worker/*)
+	# ===========================
+	handle /web-worker/* {
+		failover_proxy http://host.docker.internal:5045 http://web_worker:80 https://dev.portal.the-commons.app {
+			status_path /web-worker/*
+			fail_duration 3s
+			dial_timeout 2s
+			response_timeout 5s
+
+			# Health check for primary (local IDE)
+			health_check http://host.docker.internal:5045 {
+				path /health
+				interval 30s
+				timeout 5s
+				expected_status 200
+			}
+
+			# Health check for fallback (Docker container)
+			health_check http://web_worker:80 {
+				path /health
+				interval 30s
+				timeout 5s
+				expected_status 200
+			}
+
+			# Health checks for fallback (remote)
+			health_check https://dev.portal.the-commons.app {
+				path /web-worker/health/live
+				interval 60s
+				timeout 10s
+				expected_status 200
+			}
+
+			# Headers for local IDE
+			header_up http://host.docker.internal:5045 X-Service-Track caddy
+			header_up http://host.docker.internal:5045 X-Ingress caddy
+
+			# Headers for Docker container
+			header_up http://web_worker:80 X-Service-Track caddy-docker
+			header_up http://web_worker:80 X-Ingress caddy
+
+			header_up https://dev.portal.the-commons.app X-Service-Track caddy-fallback
+			header_up https://dev.portal.the-commons.app X-Ingress caddy
+			header_up https://dev.portal.the-commons.app Host dev.portal.the-commons.app
+		}
+	}
+
+	# ===========================
+	# DASHBOARD (/dx/*)
+	# ===========================
+	handle /dx/* {
+		failover_proxy http://dx-dash:3000 {
+			status_path /dx/*
+			fail_duration 3s
+			dial_timeout 2s
+			response_timeout 5s
+
+			header_up http://dx-dash:3000 X-Service-Track caddy
+			header_up http://dx-dash:3000 X-Ingress caddy
+		}
+	}
+
+	# ===========================
+	# CADDY ADMIN API (/caddy-admin/*)
+	# ===========================
+	handle /caddy-admin/* {
+		uri strip_prefix /caddy-admin
+		reverse_proxy localhost:2019
+	}
+
+	# ===========================
+	# ROOT REDIRECT
+	# ===========================
+	handle / {
+		redir /dx permanent
+	}
+}
+
+# HTTP Server on port 9080 - redirect to HTTPS
+http://localhost:9080 {
+	# Health check endpoint
+	handle /health {
+		respond "OK" 200
+	}
+
+	# Redirect all other traffic to HTTPS
+	handle {
+		redir https://localhost:9443{uri} permanent
+	}
+}

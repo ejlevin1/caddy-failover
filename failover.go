@@ -3,6 +3,7 @@ package caddyfailover
 
 import (
 	"context"
+	"crypto/md5"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -233,7 +234,19 @@ func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 	if registrationPath == "" && f.HandlePath != "" {
 		registrationPath = f.HandlePath
 	}
-	// Only register if we have a valid path
+
+	// If still no path, generate one based on the upstreams for status tracking
+	// This ensures the status endpoint always shows something
+	if registrationPath == "" && len(f.Upstreams) > 0 {
+		// Generate a unique identifier based on the first upstream
+		// This is a fallback to ensure status tracking works even without explicit path
+		registrationPath = fmt.Sprintf("auto-%x", hashString(f.Upstreams[0]))
+		f.logger.Debug("No path found for failover proxy, using auto-generated path",
+			zap.String("auto_path", registrationPath),
+			zap.Strings("upstreams", f.Upstreams))
+	}
+
+	// Register if we have a valid path (explicit or auto-generated)
 	if registrationPath != "" {
 		proxyRegistry.Register(registrationPath, f)
 	}
@@ -986,6 +999,12 @@ func parseFailoverStatus(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, e
 		}
 	}
 	return FailoverStatusHandler{}, nil
+}
+
+// hashString creates a short hash of a string for use as an identifier
+func hashString(s string) string {
+	h := md5.Sum([]byte(s))
+	return fmt.Sprintf("%x", h[:4]) // Use first 4 bytes for a shorter hash
 }
 
 // Interface guards

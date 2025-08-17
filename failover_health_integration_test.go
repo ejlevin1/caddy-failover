@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -582,11 +583,25 @@ func TestConcurrentHealthChecks(t *testing.T) {
 		for {
 			select {
 			case <-ticker.C:
-				// Randomly change health status
-				if time.Now().UnixNano()%2 == 0 {
-					server1Healthy.Store(!server1Healthy.Load())
-				} else {
-					server2Healthy.Store(!server2Healthy.Load())
+				// Randomly change health status, but try to keep at least one healthy
+				now := time.Now().UnixNano()
+				switch now % 4 {
+				case 0:
+					// Both healthy
+					server1Healthy.Store(true)
+					server2Healthy.Store(true)
+				case 1:
+					// Server1 healthy, server2 unhealthy
+					server1Healthy.Store(true)
+					server2Healthy.Store(false)
+				case 2:
+					// Server1 unhealthy, server2 healthy
+					server1Healthy.Store(false)
+					server2Healthy.Store(true)
+				case 3:
+					// Both unhealthy (occasional)
+					server1Healthy.Store(false)
+					server2Healthy.Store(false)
 				}
 			case <-stopChan:
 				return
@@ -617,9 +632,9 @@ func TestConcurrentHealthChecks(t *testing.T) {
 				}
 
 				// Should get response from one of the servers
-				body := recorder.Body.String()
+				body := strings.TrimSpace(recorder.Body.String())
 				if body != "server1" && body != "server2" && body != "All upstreams failed" {
-					t.Errorf("Unexpected response: %s", body)
+					t.Errorf("Unexpected response: %q (length: %d)", body, len(body))
 				}
 
 				time.Sleep(10 * time.Millisecond)

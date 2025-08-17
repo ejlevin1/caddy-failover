@@ -1,0 +1,306 @@
+#!/bin/bash
+
+# Setup script for automated branch protection
+set -e
+
+# Function to show help
+show_help() {
+    cat << EOF
+Branch Protection Setup Script
+==============================
+
+USAGE:
+    $0 [OPTIONS]
+
+DESCRIPTION:
+    Configure GitHub branch protection rules for the main branch of your repository.
+    This script can create Personal Access Tokens, save them as secrets, and apply
+    branch protection rules via the GitHub API.
+
+OPTIONS:
+    --help, -h          Show this help message and exit
+    --token TOKEN       Use the specified token instead of prompting
+    --skip-intro        Skip the introduction banner
+
+ENVIRONMENT VARIABLES:
+    GITHUB_TOKEN        If set, will be used as the PAT for authentication
+
+EXAMPLES:
+    # Interactive mode
+    $0
+
+    # With token from environment
+    export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"
+    $0
+
+    # With token as argument
+    $0 --token "ghp_xxxxxxxxxxxx"
+
+MENU OPTIONS:
+    1) Create PAT and configure branch protection
+       - Opens browser to create a new PAT
+       - Saves PAT as repository secret
+       - Applies branch protection rules
+
+    2) Configure branch protection (with existing PAT)
+       - Uses existing PAT (from env, argument, or prompt)
+       - Applies branch protection rules
+
+    3) View current branch protection status
+       - Shows current protection rules for main branch
+
+BRANCH PROTECTION RULES:
+    - Require pull request reviews (1 approval)
+    - Dismiss stale reviews on new commits
+    - Require CODEOWNERS review
+    - Require status checks: test, build, commitlint
+    - Require branches to be up to date
+    - Require conversation resolution
+    - No force pushes allowed
+    - No deletions allowed
+
+REQUIREMENTS:
+    - GitHub CLI (gh) must be installed and authenticated
+    - PAT must have 'repo' and 'admin:repo_hook' scopes
+    - You must be the repository owner or have admin access
+
+EOF
+    exit 0
+}
+
+# Parse command line arguments
+SKIP_INTRO=false
+PROVIDED_TOKEN=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --help|-h)
+            show_help
+            ;;
+        --token)
+            PROVIDED_TOKEN="$2"
+            shift 2
+            ;;
+        --skip-intro)
+            SKIP_INTRO=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+if [ "$SKIP_INTRO" = false ]; then
+    echo "========================================="
+    echo "Branch Protection Automation Setup"
+    echo "========================================="
+    echo ""
+fi
+
+# Check if gh CLI is installed
+if ! command -v gh &> /dev/null; then
+    echo -e "${RED}❌ GitHub CLI (gh) is not installed${NC}"
+    echo "Please install it first: https://cli.github.com/"
+    exit 1
+fi
+
+# Check if user is authenticated
+if ! gh auth status &> /dev/null; then
+    echo -e "${YELLOW}⚠️  You need to authenticate with GitHub CLI${NC}"
+    gh auth login
+fi
+
+echo -e "${GREEN}✅ GitHub CLI authenticated${NC}"
+echo ""
+
+# Get repository info
+REPO_OWNER=$(gh repo view --json owner -q .owner.login)
+REPO_NAME=$(gh repo view --json name -q .name)
+
+# Configuration - use repository name for token name
+TOKEN_NAME="${REPO_NAME:-branch-protection}-automation"
+
+echo "Repository: $REPO_OWNER/$REPO_NAME"
+echo ""
+
+# Function to create PAT
+create_pat() {
+    echo "Creating Personal Access Token..."
+    echo ""
+    echo "This script will guide you through creating a PAT with the necessary permissions."
+    echo ""
+    echo -e "${YELLOW}Steps:${NC}"
+    echo "1. Opening GitHub settings in your browser..."
+    echo "2. Click 'Generate new token (classic)'"
+    echo "3. Name it: '$TOKEN_NAME'"
+    echo "4. Select scopes:"
+    echo "   ✓ repo (Full control of private repositories)"
+    echo "   ✓ admin:repo_hook (Full control of repository hooks)"
+    echo "5. Click 'Generate token'"
+    echo "6. Copy the token (it won't be shown again!)"
+    echo ""
+
+    # Open GitHub token creation page
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        open "https://github.com/settings/tokens/new?description=${TOKEN_NAME}&scopes=repo,admin:repo_hook"
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        xdg-open "https://github.com/settings/tokens/new?description=${TOKEN_NAME}&scopes=repo,admin:repo_hook"
+    else
+        echo "Please open this URL in your browser:"
+        echo "https://github.com/settings/tokens/new?description=${TOKEN_NAME}&scopes=repo,admin:repo_hook"
+    fi
+
+    echo ""
+    read -sp "Paste your Personal Access Token here: " PAT
+    echo ""
+
+    if [ -z "$PAT" ]; then
+        echo -e "${RED}❌ No token provided${NC}"
+        exit 1
+    fi
+
+    # Add the PAT as a repository secret
+    echo ""
+    echo "Adding PAT as repository secret..."
+    echo "$PAT" | gh secret set ADMIN_PAT --repo="$REPO_OWNER/$REPO_NAME"
+
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✅ PAT successfully added as ADMIN_PAT secret${NC}"
+
+        # Now configure branch protection with the PAT
+        echo ""
+        echo "Now configuring branch protection with your new PAT..."
+        configure_protection "$PAT"
+    else
+        echo -e "${RED}❌ Failed to add secret${NC}"
+        exit 1
+    fi
+}
+
+# Function to configure branch protection directly
+configure_protection() {
+    echo ""
+    echo "Configuring branch protection directly..."
+    echo ""
+
+    # Check for PAT in different sources
+    if [ -n "$1" ]; then
+        # PAT passed as argument to function
+        PAT="$1"
+    elif [ -n "$PROVIDED_TOKEN" ]; then
+        # Use token provided via --token command line arg
+        echo "Using token from command line argument..."
+        PAT="$PROVIDED_TOKEN"
+    elif [ -n "$GITHUB_TOKEN" ]; then
+        # Use GITHUB_TOKEN environment variable
+        echo "Using GITHUB_TOKEN from environment..."
+        PAT="$GITHUB_TOKEN"
+    else
+        # Ask for PAT
+        echo "Note: Branch protection requires a token with admin permissions."
+        echo "You can set GITHUB_TOKEN environment variable or enter it here."
+        read -sp "Enter your Personal Access Token: " PAT
+        echo ""
+    fi
+
+    if [ -z "$PAT" ]; then
+        echo -e "${RED}❌ No token provided${NC}"
+        return 1
+    fi
+
+    echo "Applying branch protection rules to main branch..."
+
+    # Configure branch protection using the PAT
+    # Note: For personal repos, we cannot use bypass_pull_request_allowances
+    RESPONSE=$(curl -s -X PUT \
+        -H "Authorization: token $PAT" \
+        -H "Accept: application/vnd.github.v3+json" \
+        "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/branches/main/protection" \
+        -d '{
+          "required_status_checks": {
+            "strict": true,
+            "contexts": ["test", "build", "commitlint"]
+          },
+          "enforce_admins": false,
+          "required_pull_request_reviews": {
+            "required_approving_review_count": 1,
+            "dismiss_stale_reviews": true,
+            "require_code_owner_reviews": true,
+            "require_last_push_approval": false
+          },
+          "restrictions": null,
+          "allow_force_pushes": false,
+          "allow_deletions": false,
+          "block_creations": false,
+          "required_conversation_resolution": true,
+          "lock_branch": false,
+          "allow_fork_syncing": false
+        }')
+
+    # Check if successful
+    if echo "$RESPONSE" | grep -q '"url"'; then
+        echo -e "${GREEN}✅ Branch protection configured successfully!${NC}"
+        echo ""
+        echo "Protection rules applied:"
+        echo "  ✓ Require pull request reviews (1 approval)"
+        echo "  ✓ Dismiss stale reviews on new commits"
+        echo "  ✓ Require CODEOWNERS review"
+        echo "  ✓ Require status checks: test, build, commitlint"
+        echo "  ✓ Require branches to be up to date"
+        echo "  ✓ Require conversation resolution"
+        echo "  ✓ No force pushes allowed"
+        echo "  ✓ No deletions allowed"
+        return 0
+    else
+        echo -e "${RED}❌ Failed to configure branch protection${NC}"
+        echo "Error response:"
+        echo "$RESPONSE" | python -m json.tool 2>/dev/null || echo "$RESPONSE"
+        return 1
+    fi
+}
+
+# Main menu
+echo "What would you like to do?"
+echo ""
+echo "1) Create PAT and configure branch protection"
+echo "2) Configure branch protection (with existing PAT)"
+echo "3) View current branch protection status"
+echo "4) Exit"
+echo ""
+read -p "Select an option (1-4): " choice
+
+case $choice in
+    1)
+        create_pat
+        ;;
+    2)
+        configure_protection
+        ;;
+    3)
+        echo ""
+        echo "Current branch protection for main branch:"
+        gh api repos/$REPO_OWNER/$REPO_NAME/branches/main/protection 2>/dev/null | python -m json.tool 2>/dev/null || echo -e "${YELLOW}No branch protection configured${NC}"
+        ;;
+    4)
+        echo "Exiting..."
+        exit 0
+        ;;
+    *)
+        echo -e "${RED}Invalid option${NC}"
+        exit 1
+        ;;
+esac
+
+echo ""
+echo "========================================="
+echo "Setup complete!"
+echo "========================================="

@@ -1,0 +1,42 @@
+name: Update Badges and Docs
+
+on:
+  push:
+    branches:
+      - main
+  workflow_run:
+    workflows: ["Tests"]
+    types:
+      - completed
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update badges/docs
+        run: |
+          # Update test coverage badges, etc.
+          echo "Updating badges..."
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore: update badges and documentation [skip ci]'
+          title: 'chore: automated documentation updates'
+          body: |
+            Automated updates:
+            - Test coverage badges
+            - Documentation
+          branch: automated-updates
+          delete-branch: true
+          # Auto-merge if you have auto-merge enabled for the repo
+          labels: |
+            documentation
+            automated

@@ -1,3 +1,17 @@
+# [1.12.0](https://github.com/ejlevin1/caddy-failover/compare/v1.11.0...v1.12.0) (2025-08-18)
+
+
+### Bug Fixes
+
+* improve tool detection feedback in initialize.sh ([662177d](https://github.com/ejlevin1/caddy-failover/commit/662177d0e96a12a1f9a7996b7a8e0dee2d1ea873))
+* script now checks all tools including yamllint ([9dce490](https://github.com/ejlevin1/caddy-failover/commit/9dce4900546e2f4a4c41aa25087c2279add469e6))
+
+
+### Features
+
+* add usage descriptions for all tools in initialize.sh ([e22c158](https://github.com/ejlevin1/caddy-failover/commit/e22c158a4f13a23e99e2b3aa9587a16640112d09))
+* enable integration tests on main branch and add dev setup script ([0a8cd20](https://github.com/ejlevin1/caddy-failover/commit/0a8cd204d53e1d25e2ce25ee47220fb550325679))
+
 # [1.11.0](https://github.com/ejlevin1/caddy-failover/compare/v1.10.0...v1.11.0) (2025-08-18)
 
 

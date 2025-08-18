@@ -1,0 +1,66 @@
+# Git files
+# Note: .git is needed by the git-info stage in Dockerfile
+.gitignore
+.github
+
+# Documentation
+*.md
+docs/
+# Note: LICENSE is intentionally NOT ignored - it should be in the container
+
+# Test files and scripts
+test/
+*_test.go
+*.test
+integration_test.go
+testdata/
+scripts/test.sh
+scripts/docker-test.sh
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build artifacts
+caddy
+/caddy
+dist/
+buildenv_*
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Docker-related files (we don't need these in the build context)
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# CI/CD files
+.travis.yml
+.gitlab-ci.yml
+azure-pipelines.yml
+.circleci/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Coverage files
+*.out
+coverage.txt
+coverage.html
+.coverage
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Local environment files
+.env
+.env.local

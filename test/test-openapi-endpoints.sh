@@ -18,7 +18,10 @@ echo "========================================="
 echo ""
 
 # Configuration
-CADDY_PORT="${CADDY_PORT:-9443}"
+# Try to find an available port if not set
+if [ -z "$CADDY_PORT" ]; then
+    CADDY_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()' 2>/dev/null || echo "9443")
+fi
 CADDY_HOST="${CADDY_HOST:-localhost}"
 BASE_URL="https://${CADDY_HOST}:${CADDY_PORT}"
 

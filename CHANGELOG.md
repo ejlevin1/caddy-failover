@@ -1,3 +1,11 @@
+# [1.10.0](https://github.com/ejlevin1/caddy-failover/compare/v1.9.0...v1.10.0) (2025-08-18)
+
+
+### Features
+
+* add comprehensive OpenAPI test harness with 34+ API tests ([f14a465](https://github.com/ejlevin1/caddy-failover/commit/f14a4651d98dde16578e2f14193ebdbe5a0c79e8))
+* add OpenAPI test harness and project documentation ([8515c7c](https://github.com/ejlevin1/caddy-failover/commit/8515c7c84728430de8bd9bb63d7c16281bfcb10b))
+
 # [1.9.0](https://github.com/ejlevin1/caddy-failover/compare/v1.8.0...v1.9.0) (2025-08-18)
 
 

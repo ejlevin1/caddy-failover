@@ -1,3 +1,10 @@
+# [1.11.0](https://github.com/ejlevin1/caddy-failover/compare/v1.10.0...v1.11.0) (2025-08-18)
+
+
+### Features
+
+* improve health check logging and add active upstream tracking ([02a9e09](https://github.com/ejlevin1/caddy-failover/commit/02a9e09646a7f56633c4b46a9b7533233e47fbe8))
+
 # [1.10.0](https://github.com/ejlevin1/caddy-failover/compare/v1.9.0...v1.10.0) (2025-08-18)
 
 

@@ -489,12 +489,25 @@ http://localhost:80 {
 
 ### Health Check Options
 
+Health checks are configured per upstream URL within the `failover_proxy` block:
+
+```caddyfile
+health_check <upstream_url> {
+    path <endpoint_path>
+    interval <duration>
+    timeout <duration>
+    expected_status <http_code>
+}
+```
+
 | Option | Description | Default |
 |--------|-------------|---------|
 | `path` | Health check endpoint path | `/health` |
 | `interval` | Check interval | `30s` |
 | `timeout` | Check timeout | `5s` |
 | `expected_status` | Expected HTTP status code | `200` |
+
+**Important:** Each `health_check` directive must specify the upstream URL it applies to.
 
 ### API Registrar Formats
 
@@ -512,12 +525,12 @@ http://localhost:80 {
 ```bash
 # Standard image (failover plugin only)
 docker pull ghcr.io/ejlevin1/caddy-failover:latest
-docker pull ghcr.io/ejlevin1/caddy-failover:1.6.1
+docker pull ghcr.io/ejlevin1/caddy-failover:1.9.0
 docker pull ghcr.io/ejlevin1/caddy-failover:1
 
 # Loaded image (with additional plugins)
 docker pull ghcr.io/ejlevin1/caddy-failover:latest-loaded
-docker pull ghcr.io/ejlevin1/caddy-failover:1.6.1-loaded
+docker pull ghcr.io/ejlevin1/caddy-failover:1.9.0-loaded
 docker pull ghcr.io/ejlevin1/caddy-failover:1-loaded
 ```
 
@@ -711,9 +724,17 @@ caddy run --config Caddyfile --debug
 
 4. **Health checks not running**
    - Solution: Verify health check configuration and endpoint accessibility
+   - Ensure each `health_check` specifies its upstream URL
 
 5. **Failover not triggering**
    - Solution: Check `fail_duration` setting and debug logs
+
+6. **"Unknown subdirective" errors**
+   - Common mistakes:
+     - Using `timeout` instead of `dial_timeout` or `response_timeout`
+     - Using `retry_count` or `retry_delay` (not supported)
+     - Incorrect `health_check` syntax (missing upstream URL)
+   - Solution: Check the Configuration Options Reference for valid directives
 
 ## Additional Documentation
 

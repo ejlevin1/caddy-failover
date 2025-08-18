@@ -1,5 +1,11 @@
 name: Test Plugin
 
+# Coverage Upload Strategy:
+# - PRs: Optional coverage upload in test job (won't fail if rate limited)
+# - Main branch: Dedicated coverage-report job handles uploads
+# - Requires CODECOV_TOKEN secret to be set in repository settings
+# This prevents rate limit issues and duplicate uploads
+
 on:
   pull_request:
     branches:
@@ -53,12 +59,17 @@ jobs:
       - name: Run quick tests
         run: ./scripts/test.sh quick
 
-      - name: Upload coverage to Codecov
-        if: matrix.go-version == '1.22'
-        uses: codecov/codecov-action@v3
+      # Optional coverage upload for PRs (won't fail if rate limited)
+      # Main branch coverage is handled by the dedicated coverage-report job
+      - name: Upload coverage to Codecov (PR only)
+        if: matrix.go-version == '1.22' && github.event_name == 'pull_request'
+        uses: codecov/codecov-action@v4
         with:
           file: ./coverage.out
-          fail_ci_if_error: false
+          fail_ci_if_error: false  # Don't fail PRs due to codecov issues
+          verbose: false
+          token: ${{ secrets.CODECOV_TOKEN }}  # v4 requires token
+        continue-on-error: true  # Continue even if upload fails
 
   benchmark:
     name: Run Benchmarks
@@ -124,6 +135,8 @@ jobs:
     name: Generate Coverage Report
     runs-on: ubuntu-latest
     needs: test
+    # Only run on pushes to main branch to avoid rate limits
+    # This job handles all coverage uploads to Codecov
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
@@ -142,10 +155,12 @@ jobs:
         run: ./scripts/test.sh coverage -n
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           file: ./coverage.out
-          fail_ci_if_error: true
+          fail_ci_if_error: false  # Don't fail the workflow if codecov has issues
+          verbose: true  # Enable verbose output for debugging
+          token: ${{ secrets.CODECOV_TOKEN }}  # v4 requires token
 
   integration-test:
     name: Run Integration Tests

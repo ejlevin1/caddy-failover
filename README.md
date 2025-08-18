@@ -18,6 +18,122 @@ A comprehensive Caddy plugin that provides intelligent failover between multiple
 - **Environment Variables**: Full support for environment variable expansion
 - **Path Preservation**: Maintains upstream base paths in routing
 
+## Development Setup
+
+### Prerequisites
+
+Before developing or building this plugin, ensure you have the required tools installed:
+
+```bash
+# Run the initialization script to check your environment
+./scripts/initialize.sh
+```
+
+This script will:
+- Detect your operating system and package manager
+- Check for all required and optional development tools
+- Provide OS-specific installation instructions for missing tools
+- Verify your Go environment setup
+- Install missing Go tools automatically when possible
+
+**Supported Systems:**
+- macOS (Intel & Apple Silicon)
+- Linux (Ubuntu/Debian, RHEL/CentOS/Fedora, Arch, OpenSUSE, Alpine)
+- FreeBSD
+- **Note:** Windows/WSL is not tested and may require adjustments
+
+#### Required Tools
+- **Go 1.22+**: Core language for development
+- **Git**: Version control
+- **curl**: HTTP client for downloads
+
+#### Recommended Tools
+- **xcaddy**: Build Caddy with plugins
+- **Docker & Docker Compose**: For integration testing
+- **jq**: JSON processing for test scripts
+- **golangci-lint**: Code quality checks
+- **yamllint**: YAML validation for CI/CD files
+- **GitHub CLI (gh)**: For PR management
+- **make**: Build automation
+
+### Platform-Specific Quick Install
+
+#### macOS
+
+```bash
+# Install Homebrew if not already installed
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install all tools via Homebrew
+brew install go git jq yamllint gh golangci-lint curl make
+
+# Install Go tools
+go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+# Add Go binaries to PATH (add to ~/.zshrc or ~/.bash_profile)
+export PATH=$PATH:$(go env GOPATH)/bin
+
+# Verify setup
+./scripts/initialize.sh
+```
+
+#### Linux (Ubuntu/Debian)
+
+```bash
+# Update and install tools
+sudo apt-get update
+sudo apt-get install -y golang git curl jq make yamllint
+
+# Install GitHub CLI
+curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /usr/share/keyrings/githubcli-archive-keyring.gpg > /dev/null
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+sudo apt update && sudo apt install gh
+
+# Install Go tools
+go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+
+# Add to ~/.bashrc
+export PATH=$PATH:$(go env GOPATH)/bin
+
+# Verify setup
+./scripts/initialize.sh
+```
+
+#### Linux (RHEL/CentOS/Fedora)
+
+```bash
+# Install tools
+sudo dnf install -y golang git curl jq make yamllint gh
+
+# Install Go tools
+go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+
+# Add to ~/.bashrc
+export PATH=$PATH:$(go env GOPATH)/bin
+
+# Verify setup
+./scripts/initialize.sh
+```
+
+#### Linux (Arch/Manjaro)
+
+```bash
+# Install tools
+sudo pacman -S --noconfirm go git curl jq make yamllint github-cli
+
+# Install Go tools
+go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+
+# Add to ~/.bashrc
+export PATH=$PATH:$(go env GOPATH)/bin
+
+# Verify setup
+./scripts/initialize.sh
+```
+
 ## Quick Start
 
 ### Using Docker (Recommended)

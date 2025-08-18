@@ -226,8 +226,14 @@ check_docker() {
             WARNINGS=$((WARNINGS + 1))
         fi
     else
-        print_color $YELLOW "⚠️  Docker NOT found (OPTIONAL - needed for Docker tests)"
-        print_color $CYAN "   Installation: https://docs.docker.com/desktop/install/mac-install/"
+        print_color $YELLOW "⚠️  Docker NOT found (RECOMMENDED for integration tests)"
+        if [ "$OS_TYPE" = "macos" ]; then
+            print_color $CYAN "   Installation: https://docs.docker.com/desktop/install/mac-install/"
+        elif [ "$OS_TYPE" = "linux" ]; then
+            print_color $CYAN "   Installation: https://docs.docker.com/engine/install/"
+        else
+            print_color $CYAN "   Installation: https://docs.docker.com/get-docker/"
+        fi
         WARNINGS=$((WARNINGS + 1))
     fi
 }
@@ -262,7 +268,10 @@ else
     check_command "go" "Go" "go" "golang" "golang" "go" true
 fi
 check_go_version
+print_color $CYAN "   📝 Used for: Building and testing the Caddy plugin"
+echo ""
 check_command "git" "Git" "git" "git" "git" "git" true
+print_color $CYAN "   📝 Used for: Version control and collaboration"
 echo ""
 
 # Build Tools
@@ -270,52 +279,74 @@ print_color $YELLOW "🔨 Build Tools:"
 print_color $YELLOW "---------------"
 # xcaddy is typically installed via go install
 check_command "xcaddy" "xcaddy" "xcaddy" "xcaddy" "xcaddy" "xcaddy" false
+print_color $CYAN "   📝 Used for: Building Caddy server with custom plugins"
+echo ""
 check_command "make" "Make" "make" "make" "make" "make" false
+print_color $CYAN "   📝 Used for: Build automation and task running"
 echo ""
 
 # Container & Testing Tools
 print_color $YELLOW "🧪 Container & Testing Tools:"
 print_color $YELLOW "-----------------------------"
 check_command "curl" "curl" "curl" "curl" "curl" "curl" true
+print_color $CYAN "   📝 Used for: Testing HTTP endpoints and downloading files"
+echo ""
 check_docker
+print_color $CYAN "   📝 Used for: Running containerized tests and building Docker images"
+echo ""
 # Docker Compose can be standalone or part of Docker Desktop
 if command -v docker &> /dev/null && docker compose version &> /dev/null 2>&1; then
     version=$(docker compose version 2>&1 | head -n1)
     print_color $GREEN "✅ Docker Compose found (Docker plugin): $version"
+    print_color $CYAN "   📝 Used for: Orchestrating multi-container test environments"
 elif command -v docker-compose &> /dev/null; then
     version=$(docker-compose --version 2>&1 | head -n1)
     print_color $GREEN "✅ Docker Compose found (standalone): $version"
+    print_color $CYAN "   📝 Used for: Orchestrating multi-container test environments"
 else
     print_color $YELLOW "⚠️  Docker Compose NOT found (RECOMMENDED for integration tests)"
     print_color $CYAN "   Installation: Included with Docker Desktop or install docker-compose-plugin"
+    print_color $CYAN "   📝 Used for: Orchestrating multi-container test environments"
     WARNINGS=$((WARNINGS + 1))
 fi
+echo ""
 check_command "jq" "jq (JSON processor)" "jq" "jq" "jq" "jq" false
+print_color $CYAN "   📝 Used for: Parsing JSON output in test scripts"
 echo ""
 
 # Code Quality Tools
 print_color $YELLOW "✨ Code Quality Tools:"
 print_color $YELLOW "----------------------"
 check_command "gofmt" "gofmt" "go" "golang" "golang" "go" true
+print_color $CYAN "   📝 Used for: Formatting Go code to standard style"
+echo ""
 check_command "golangci-lint" "golangci-lint" "golangci-lint" "golangci-lint" "golangci-lint" "golangci-lint" false
-if ! command -v golangci-lint &> /dev/null; then
+if ! command -v golangci-lint &> /dev/null && [ -z "$(find $(go env GOPATH 2>/dev/null)/bin -name golangci-lint 2>/dev/null)" ]; then
     print_color $CYAN "   Alternative: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b \$(go env GOPATH)/bin"
 fi
+print_color $CYAN "   📝 Used for: Comprehensive Go code linting and static analysis"
+echo ""
 check_command "yamllint" "yamllint" "yamllint" "yamllint" "yamllint" "yamllint" false
 if ! command -v yamllint &> /dev/null; then
     print_color $CYAN "   Alternative: pip3 install --user yamllint"
 fi
+print_color $CYAN "   📝 Used for: Validating YAML files (configs, workflows)"
 echo ""
 
 # Git Hooks & CI Tools
 print_color $YELLOW "🔗 Git Hooks & CI Tools:"
 print_color $YELLOW "------------------------"
 check_command "python3" "Python 3" "python3" "python3" "python3" "python" false
+print_color $CYAN "   📝 Used for: Running pre-commit hooks and various scripts"
+echo ""
 check_command "pip3" "pip3" "python3" "python3-pip" "python3-pip" "python-pip" false
+print_color $CYAN "   📝 Used for: Installing Python packages (pre-commit, yamllint)"
+echo ""
 # Check for pre-commit
 if command -v pre-commit &> /dev/null; then
     version=$(pre-commit --version 2>&1 | head -n1)
     print_color $GREEN "✅ pre-commit found: $version"
+    print_color $CYAN "   📝 Used for: Automated code checks before git commits"
 else
     print_color $YELLOW "⚠️  pre-commit NOT found (OPTIONAL - for Git hooks)"
     if command -v pip3 &> /dev/null; then
@@ -325,6 +356,7 @@ else
     else
         print_color $CYAN "   Installation: Install Python first, then: pip install pre-commit"
     fi
+    print_color $CYAN "   📝 Used for: Automated code checks before git commits"
     WARNINGS=$((WARNINGS + 1))
 fi
 echo ""
@@ -333,9 +365,14 @@ echo ""
 print_color $YELLOW "🔧 Additional Tools:"
 print_color $YELLOW "--------------------"
 check_command "gh" "GitHub CLI" "gh" "gh" "gh" "github-cli" false
+print_color $CYAN "   📝 Used for: Creating pull requests and managing GitHub repos"
+echo ""
 # Check for other useful tools
 check_command "watch" "watch (file monitoring)" "watch" "procps-ng" "procps-ng" "procps" false
+print_color $CYAN "   📝 Used for: Monitoring file changes and command output"
+echo ""
 check_command "tree" "tree (directory viewer)" "tree" "tree" "tree" "tree" false
+print_color $CYAN "   📝 Used for: Visualizing directory structures"
 echo ""
 
 # Check for Go modules

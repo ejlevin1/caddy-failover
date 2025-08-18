@@ -134,6 +134,9 @@ func (r *ProxyRegistry) GetStatus() []PathStatus {
 			ps.Active = active
 		}
 
+		// Get the active upstream metrics
+		ps.ActiveMetrics = entry.Proxy.GetActiveUpstreamMetrics()
+
 		status = append(status, ps)
 	}
 	return status
@@ -143,6 +146,7 @@ func (r *ProxyRegistry) GetStatus() []PathStatus {
 type PathStatus struct {
 	Path            string           `json:"path"`
 	Active          string           `json:"active,omitempty"`
+	ActiveMetrics   *ActiveUpstream  `json:"active_metrics,omitempty"`
 	FailoverProxies []UpstreamStatus `json:"failover_proxies"`
 }
 
@@ -154,6 +158,44 @@ type UpstreamStatus struct {
 	LastFailure  time.Time `json:"last_failure,omitempty"`
 	HealthCheck  bool      `json:"health_check_enabled"`
 	ResponseTime int64     `json:"response_time_ms,omitempty"`
+}
+
+// ActiveUpstream tracks the currently active upstream and its metrics
+type ActiveUpstream struct {
+	URL             string     `json:"url"`
+	Since           time.Time  `json:"active_since"`
+	RequestCount    int64      `json:"request_count"`
+	LastRequestTime time.Time  `json:"last_request,omitempty"`
+	TotalResponseMs int64      `json:"-"` // Internal, used to calculate average
+	AvgResponseMs   float64    `json:"avg_response_ms"`
+	LastResponseMs  int64      `json:"last_response_ms"`
+	FailedRequests  int64      `json:"failed_requests"`
+	SuccessRate     float64    `json:"success_rate"` // Percentage
+	mu              sync.Mutex `json:"-"`            // Protect concurrent access
+}
+
+// UpdateMetrics updates the metrics for a request
+func (a *ActiveUpstream) UpdateMetrics(responseMs int64, success bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.RequestCount++
+	a.LastRequestTime = time.Now()
+	a.LastResponseMs = responseMs
+
+	if success {
+		a.TotalResponseMs += responseMs
+		successfulRequests := a.RequestCount - a.FailedRequests
+		if successfulRequests > 0 {
+			a.AvgResponseMs = float64(a.TotalResponseMs) / float64(successfulRequests)
+		}
+	} else {
+		a.FailedRequests++
+	}
+
+	if a.RequestCount > 0 {
+		a.SuccessRate = float64(a.RequestCount-a.FailedRequests) / float64(a.RequestCount) * 100
+	}
 }
 
 // HealthCheck defines health check configuration for an upstream
@@ -201,17 +243,18 @@ type FailoverProxy struct {
 	// HandlePath is the actual handle block path (e.g., /auth/*)
 	HandlePath string `json:"handle_path,omitempty"`
 
-	logger        *zap.Logger
-	replacer      *caddy.Replacer
-	httpClient    *http.Client
-	httpsClient   *http.Client
-	failureCache  map[string]time.Time
-	healthStatus  map[string]bool // true = healthy, false = unhealthy
-	lastCheckTime map[string]time.Time
-	responseTime  map[string]int64 // response time in milliseconds
-	mu            sync.RWMutex
-	shutdown      chan struct{}
-	wg            sync.WaitGroup
+	logger         *zap.Logger
+	replacer       *caddy.Replacer
+	httpClient     *http.Client
+	httpsClient    *http.Client
+	failureCache   map[string]time.Time
+	healthStatus   map[string]bool // true = healthy, false = unhealthy
+	lastCheckTime  map[string]time.Time
+	responseTime   map[string]int64 // response time in milliseconds
+	activeUpstream *ActiveUpstream  // Currently active upstream with metrics
+	mu             sync.RWMutex
+	shutdown       chan struct{}
+	wg             sync.WaitGroup
 }
 
 // CaddyModule returns the Caddy module information
@@ -230,6 +273,7 @@ func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 	f.healthStatus = make(map[string]bool)
 	f.lastCheckTime = make(map[string]time.Time)
 	f.responseTime = make(map[string]int64)
+	f.activeUpstream = nil
 	f.shutdown = make(chan struct{})
 
 	// Register with global registry
@@ -438,6 +482,29 @@ func (f *FailoverProxy) GetActiveUpstream() string {
 	return ""
 }
 
+// GetActiveUpstreamMetrics returns a copy of the active upstream metrics
+func (f *FailoverProxy) GetActiveUpstreamMetrics() *ActiveUpstream {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if f.activeUpstream == nil {
+		return nil
+	}
+
+	// Return a copy of the data (not the mutex) to avoid race conditions
+	return &ActiveUpstream{
+		URL:             f.activeUpstream.URL,
+		Since:           f.activeUpstream.Since,
+		RequestCount:    f.activeUpstream.RequestCount,
+		LastRequestTime: f.activeUpstream.LastRequestTime,
+		TotalResponseMs: f.activeUpstream.TotalResponseMs,
+		AvgResponseMs:   f.activeUpstream.AvgResponseMs,
+		LastResponseMs:  f.activeUpstream.LastResponseMs,
+		FailedRequests:  f.activeUpstream.FailedRequests,
+		SuccessRate:     f.activeUpstream.SuccessRate,
+	}
+}
+
 // GetUpstreamStatus returns the current status of all upstreams
 func (f *FailoverProxy) GetUpstreamStatus() []UpstreamStatus {
 	f.mu.RLock()
@@ -591,13 +658,107 @@ func (f *FailoverProxy) setHealthStatus(upstreamURL string, healthy bool) {
 		if healthy {
 			// Clear failure cache when upstream becomes healthy
 			delete(f.failureCache, upstreamURL)
-			f.logger.Info("upstream became healthy",
+			f.logger.Debug("upstream became healthy",
 				zap.String("upstream", upstreamURL))
 		} else {
-			f.logger.Warn("upstream became unhealthy",
+			f.logger.Debug("upstream became unhealthy",
 				zap.String("upstream", upstreamURL))
 		}
 	}
+
+	// Check if active upstream needs to change
+	f.checkActiveUpstreamChange()
+}
+
+// checkActiveUpstreamChange determines if the active upstream should change
+// Must be called with lock held
+func (f *FailoverProxy) checkActiveUpstreamChange() {
+	// Find the first healthy upstream
+	var newActiveURL string
+	for _, upstream := range f.Upstreams {
+		if healthy, exists := f.healthStatus[upstream]; exists && healthy {
+			// Also check failure cache
+			if lastFail, failed := f.failureCache[upstream]; !failed ||
+				time.Since(lastFail) >= time.Duration(f.FailDuration) {
+				newActiveURL = upstream
+				break
+			}
+		}
+	}
+
+	// Check if active upstream changed
+	currentURL := ""
+	if f.activeUpstream != nil {
+		currentURL = f.activeUpstream.URL
+	}
+
+	if newActiveURL != currentURL {
+		// Debug log the detailed change
+		if currentURL == "" && newActiveURL != "" {
+			f.logger.Debug("active upstream initialized",
+				zap.String("upstream", newActiveURL))
+		} else if newActiveURL == "" {
+			f.logger.Debug("no healthy upstreams available",
+				zap.String("previous", currentURL))
+		} else {
+			f.logger.Debug("active upstream changed",
+				zap.String("from", currentURL),
+				zap.String("to", newActiveURL),
+				zap.String("reason", f.determineChangeReason(currentURL, newActiveURL)))
+		}
+
+		// User-friendly log at appropriate level
+		path := f.Path
+		if path == "" {
+			path = "/"
+		}
+
+		if newActiveURL != "" {
+			f.logger.Info("Active upstream for path set",
+				zap.String("path", path),
+				zap.String("upstream", newActiveURL))
+		} else {
+			f.logger.Warn("No available upstream server",
+				zap.String("path", path))
+		}
+
+		// Update active upstream
+		if newActiveURL != "" {
+			f.activeUpstream = &ActiveUpstream{
+				URL:   newActiveURL,
+				Since: time.Now(),
+			}
+		} else {
+			f.activeUpstream = nil
+		}
+	}
+}
+
+// determineChangeReason figures out why the active upstream changed
+func (f *FailoverProxy) determineChangeReason(from, to string) string {
+	fromHealthy, fromExists := f.healthStatus[from]
+
+	// Check if previous upstream failed
+	if fromExists && !fromHealthy {
+		return "previous upstream unhealthy"
+	}
+
+	// Check if it's in failure cache
+	if _, failed := f.failureCache[from]; failed {
+		return "previous upstream in failure state"
+	}
+
+	// Check if a higher priority upstream recovered
+	for _, upstream := range f.Upstreams {
+		if upstream == to {
+			return "higher priority upstream recovered"
+		}
+		if upstream == from {
+			break
+		}
+	}
+
+	return "unknown"
 }
 
 // isHealthy checks if an upstream is healthy
@@ -659,24 +820,42 @@ func (f *FailoverProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path))
 
+		// Track request timing
+		startTime := time.Now()
+
 		// Try this upstream
 		err := f.tryUpstream(w, r, upstreamURL)
+
+		// Calculate elapsed time
+		elapsed := time.Since(startTime).Milliseconds()
+
 		if err == nil {
 			// Success! Clear failure cache for this upstream
 			f.mu.Lock()
 			delete(f.failureCache, upstreamURL)
+
+			// Update active upstream metrics
+			if f.activeUpstream != nil && f.activeUpstream.URL == upstreamURL {
+				f.activeUpstream.UpdateMetrics(elapsed, true)
+			}
 			f.mu.Unlock()
 
 			f.logger.Info("successfully proxied request",
 				zap.String("upstream", upstreamURL),
 				zap.String("method", r.Method),
-				zap.String("path", r.URL.Path))
+				zap.String("path", r.URL.Path),
+				zap.Int64("response_ms", elapsed))
 			return nil
 		}
 
 		// Mark failure
 		f.mu.Lock()
 		f.failureCache[upstreamURL] = time.Now()
+
+		// Update failure metrics if this was the active upstream
+		if f.activeUpstream != nil && f.activeUpstream.URL == upstreamURL {
+			f.activeUpstream.UpdateMetrics(0, false)
+		}
 		f.mu.Unlock()
 
 		f.logger.Debug("upstream failed, trying next",

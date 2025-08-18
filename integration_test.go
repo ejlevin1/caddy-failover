@@ -5,6 +5,7 @@ package caddyfailover
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,8 +14,26 @@ import (
 	"github.com/caddyserver/caddy/v2/caddytest"
 )
 
+// getAvailablePort finds an available port on the local system
+func getAvailablePort() (int, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer listener.Close()
+
+	addr := listener.Addr().(*net.TCPAddr)
+	return addr.Port, nil
+}
+
 // TestFailoverProxyIntegration tests the full integration of the failover proxy
 func TestFailoverProxyIntegration(t *testing.T) {
+	// Get an available port
+	port, err := getAvailablePort()
+	if err != nil {
+		t.Fatalf("Failed to get available port: %v", err)
+	}
+
 	// Create mock upstream servers
 	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -36,15 +55,15 @@ func TestFailoverProxyIntegration(t *testing.T) {
 			order failover_status before respond
 			admin localhost:2999
 		}
-		:9080 {
+		:%d {
 			failover_proxy %s %s {
 				fail_duration 1s
 			}
 		}
-	`, primary.URL, secondary.URL), "caddyfile")
+	`, port, primary.URL, secondary.URL), "caddyfile")
 
 	// Test that the proxy works
-	resp, err := http.Get("http://localhost:9080/api/test")
+	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/api/test", port))
 	if err != nil {
 		t.Fatalf("Failed to make request: %v", err)
 	}
@@ -57,6 +76,12 @@ func TestFailoverProxyIntegration(t *testing.T) {
 
 // TestFailoverStatusEndpointIntegration tests the failover status endpoint
 func TestFailoverStatusEndpointIntegration(t *testing.T) {
+	// Get an available port
+	port, err := getAvailablePort()
+	if err != nil {
+		t.Fatalf("Failed to get available port: %v", err)
+	}
+
 	// Create test servers
 	upstream1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" {
@@ -86,7 +111,7 @@ func TestFailoverStatusEndpointIntegration(t *testing.T) {
 			order failover_status before respond
 			admin localhost:2999
 		}
-		:9080 {
+		:%d {
 			handle /status {
 				failover_status
 			}
@@ -108,13 +133,13 @@ func TestFailoverStatusEndpointIntegration(t *testing.T) {
 				}
 			}
 		}
-	`, upstream1.URL, upstream2.URL, upstream1.URL, upstream2.URL), "caddyfile")
+	`, port, upstream1.URL, upstream2.URL, upstream1.URL, upstream2.URL), "caddyfile")
 
 	// Wait for health checks to run
 	time.Sleep(200 * time.Millisecond)
 
 	// Test the status endpoint
-	resp, err := http.Get("http://localhost:9080/status")
+	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/status", port))
 	if err != nil {
 		t.Fatalf("Failed to get status: %v", err)
 	}

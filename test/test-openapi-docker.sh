@@ -20,9 +20,24 @@ NC='\033[0m' # No Color
 # Configuration
 COMPOSE_FILE="docker-compose.openapi.yml"
 CADDY_HOST="localhost"
-CADDY_PORT="9080"
+
+# Function to find an available port
+find_available_port() {
+    python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()' 2>/dev/null || echo "$1"
+}
+
+# Find available ports dynamically
+CADDY_PORT=$(find_available_port 9080)
+CADDY_HTTPS_PORT=$(find_available_port 9443)
+CADDY_ADMIN_PORT=$(find_available_port 2019)
+
 BASE_URL="http://${CADDY_HOST}:${CADDY_PORT}"
 TIMEOUT=10
+
+# Export ports for docker-compose to use
+export CADDY_PORT
+export CADDY_HTTPS_PORT
+export CADDY_ADMIN_PORT
 
 # Test results
 TOTAL_TESTS=0
@@ -188,18 +203,18 @@ test_admin_api_endpoint() {
 
     print_color $BLUE "\n🔧 Testing: ${description}"
     echo "  Method: ${method}"
-    echo "  Endpoint: http://localhost:2019${endpoint}"
+    echo "  Endpoint: http://localhost:${CADDY_ADMIN_PORT}${endpoint}"
 
     # Prepare curl command based on method
     if [ "$method" = "GET" ]; then
-        response=$(curl -s -w "\n%{http_code}" -X GET "http://localhost:2019${endpoint}" 2>/dev/null)
+        response=$(curl -s -w "\n%{http_code}" -X GET "http://localhost:${CADDY_ADMIN_PORT}${endpoint}" 2>/dev/null)
     elif [ "$method" = "POST" ] || [ "$method" = "PUT" ] || [ "$method" = "PATCH" ]; then
         response=$(curl -s -w "\n%{http_code}" -X "$method" \
             -H "Content-Type: application/json" \
             -d "$data" \
-            "http://localhost:2019${endpoint}" 2>/dev/null)
+            "http://localhost:${CADDY_ADMIN_PORT}${endpoint}" 2>/dev/null)
     elif [ "$method" = "DELETE" ]; then
-        response=$(curl -s -w "\n%{http_code}" -X DELETE "http://localhost:2019${endpoint}" 2>/dev/null)
+        response=$(curl -s -w "\n%{http_code}" -X DELETE "http://localhost:${CADDY_ADMIN_PORT}${endpoint}" 2>/dev/null)
     else
         print_color $RED "  ❌ Unknown method: $method"
         FAILED_TESTS=$((FAILED_TESTS + 1))
@@ -234,7 +249,7 @@ test_adapt_endpoint() {
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
 
     print_color $BLUE "\n🔄 Testing: ${description}"
-    echo "  Endpoint: http://localhost:2019/adapt"
+    echo "  Endpoint: http://localhost:${CADDY_ADMIN_PORT}/adapt"
     echo "  Format: ${config_format}"
 
     # Set content type based on format
@@ -247,7 +262,7 @@ test_adapt_endpoint() {
     response=$(curl -s -w "\n%{http_code}" -X POST \
         -H "Content-Type: ${content_type}" \
         -d "$config_data" \
-        "http://localhost:2019/adapt" 2>/dev/null)
+        "http://localhost:${CADDY_ADMIN_PORT}/adapt" 2>/dev/null)
 
     http_code=$(echo "$response" | tail -n 1)
     body=$(echo "$response" | sed '$d')
@@ -295,6 +310,10 @@ print_color $GREEN "✅ All required tools are installed"
 
 # Build and start services
 print_color $BLUE "\n🚀 Starting Docker Compose services..."
+print_color $BLUE "📍 Using dynamic ports:"
+print_color $BLUE "   HTTP: ${CADDY_PORT}"
+print_color $BLUE "   HTTPS: ${CADDY_HTTPS_PORT}"
+print_color $BLUE "   Admin: ${CADDY_ADMIN_PORT}"
 # Use --no-cache only if REBUILD env var is set
 if [ "${REBUILD:-0}" = "1" ]; then
     print_color $YELLOW "Rebuilding without cache (REBUILD=1)"
@@ -348,7 +367,7 @@ test_json_endpoint "/caddy/failover/status" ".[0].path" "Failover Status API"
 
 # Test Caddy Admin API - Basic accessibility
 print_color $YELLOW "\n=== Caddy Admin API Basic Tests ==="
-if curl -s "http://localhost:2019/config/" > /dev/null 2>&1; then
+if curl -s "http://localhost:${CADDY_ADMIN_PORT}/config/" > /dev/null 2>&1; then
     print_color $GREEN "  ✅ Caddy Admin API is accessible"
     PASSED_TESTS=$((PASSED_TESTS + 1))
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
@@ -459,7 +478,7 @@ print_color $YELLOW "\n=== Headers and Content Type Tests ==="
 # Test that config endpoint returns proper JSON content-type
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 print_color $BLUE "\n📋 Testing: Content-Type header validation"
-response_headers=$(curl -s -I "http://localhost:2019/config/" 2>/dev/null)
+response_headers=$(curl -s -I "http://localhost:${CADDY_ADMIN_PORT}/config/" 2>/dev/null)
 if echo "$response_headers" | grep -q "Content-Type: application/json"; then
     print_color $GREEN "  ✅ Correct Content-Type: application/json"
     PASSED_TESTS=$((PASSED_TESTS + 1))
@@ -571,7 +590,7 @@ else
     print_color $YELLOW "Debugging tips:"
     print_color $YELLOW "  1. Run with VERBOSE=1 to see container logs"
     print_color $YELLOW "  2. Check if all containers are running: docker-compose ps"
-    print_color $YELLOW "  3. Verify Caddy config: curl http://localhost:2019/config/"
+    print_color $YELLOW "  3. Verify Caddy config: curl http://localhost:${CADDY_ADMIN_PORT}/config/"
     print_color $YELLOW "  4. Check individual endpoint: curl -v <endpoint>"
     echo ""
     exit 1

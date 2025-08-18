@@ -85,10 +85,14 @@ COPY --from=builder-loaded-cache /src/caddy /usr/bin/caddy
 COPY --from=git-info /build-info-loaded.json /etc/caddy/build-info.json
 RUN chmod 644 /etc/caddy/build-info.json
 
+# Copy license file for compliance
+COPY LICENSE /usr/share/licenses/caddy-failover/LICENSE
+
 # Add labels for OCI image spec
 LABEL org.opencontainers.image.source="https://github.com/ejlevin1/caddy-failover" \
       org.opencontainers.image.title="Caddy with Failover Plugin and Additional Modules" \
-      org.opencontainers.image.description="Caddy web server with failover, admin UI, and Docker proxy plugins"
+      org.opencontainers.image.description="Caddy web server with failover, admin UI, and Docker proxy plugins" \
+      org.opencontainers.image.licenses="MIT"
 
 # Expose ports
 EXPOSE 80 443 2019
@@ -109,10 +113,14 @@ COPY --from=builder-cache /src/caddy /usr/bin/caddy
 COPY --from=git-info /build-info-standard.json /etc/caddy/build-info.json
 RUN chmod 644 /etc/caddy/build-info.json
 
+# Copy license file for compliance
+COPY LICENSE /usr/share/licenses/caddy-failover/LICENSE
+
 # Add labels for OCI image spec
 LABEL org.opencontainers.image.source="https://github.com/ejlevin1/caddy-failover" \
       org.opencontainers.image.title="Caddy with Failover Plugin" \
-      org.opencontainers.image.description="Caddy web server with intelligent failover plugin"
+      org.opencontainers.image.description="Caddy web server with intelligent failover plugin" \
+      org.opencontainers.image.licenses="MIT"
 
 # Expose ports
 EXPOSE 80 443 2019

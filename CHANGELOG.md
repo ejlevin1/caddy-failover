@@ -1,3 +1,10 @@
+## [1.12.1](https://github.com/ejlevin1/caddy-failover/compare/v1.12.0...v1.12.1) (2025-08-18)
+
+
+### Bug Fixes
+
+* resolve OpenAPI endpoint path issues and improve documentation ([25690fb](https://github.com/ejlevin1/caddy-failover/commit/25690fb859d7546f485b873ec40c51156640170a))
+
 # [1.12.0](https://github.com/ejlevin1/caddy-failover/compare/v1.11.0...v1.12.0) (2025-08-18)
 
 

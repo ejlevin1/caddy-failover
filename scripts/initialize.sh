@@ -6,7 +6,8 @@
 # Supported Systems: macOS, Linux (Ubuntu/Debian, RHEL/CentOS/Fedora, Arch)
 # Note: Windows/WSL is not tested and may require adjustments
 
-set -e
+# Don't exit on non-zero returns since we're checking for missing tools
+set +e
 
 # Colors for output
 RED='\033[0;31m'
@@ -321,8 +322,12 @@ check_command "gofmt" "gofmt" "go" "golang" "golang" "go" true
 print_color $CYAN "   📝 Used for: Formatting Go code to standard style"
 echo ""
 check_command "golangci-lint" "golangci-lint" "golangci-lint" "golangci-lint" "golangci-lint" "golangci-lint" false
-if ! command -v golangci-lint &> /dev/null && [ -z "$(find $(go env GOPATH 2>/dev/null)/bin -name golangci-lint 2>/dev/null)" ]; then
-    print_color $CYAN "   Alternative: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b \$(go env GOPATH)/bin"
+if ! command -v golangci-lint &> /dev/null; then
+    # Check if it exists in GOPATH/bin
+    GOPATH_BIN="$(go env GOPATH 2>/dev/null)/bin"
+    if [ ! -x "$GOPATH_BIN/golangci-lint" ]; then
+        print_color $CYAN "   Alternative: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b \$(go env GOPATH)/bin"
+    fi
 fi
 print_color $CYAN "   📝 Used for: Comprehensive Go code linting and static analysis"
 echo ""

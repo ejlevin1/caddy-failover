@@ -44,9 +44,8 @@ build/
 test-caddyfile
 test.Caddyfile
 
-# Examples subdirectories (keep Caddyfile examples but ignore local configs)
+# Examples subdirectories - exclude ALL contents of subfolders
 examples/*/
-!examples/*/Caddyfile
-!examples/*/docker-compose.yaml
-!examples/*/docker-compose.yml
-!examples/*/*.md
+
+# Exclude golang build environment folders
+buildenv_*

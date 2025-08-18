@@ -5,586 +5,219 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/ejlevin1/caddy-failover)](https://goreportcard.com/report/github.com/ejlevin1/caddy-failover)
 [![Go Reference](https://pkg.go.dev/badge/github.com/ejlevin1/caddy-failover.svg)](https://pkg.go.dev/github.com/ejlevin1/caddy-failover)
 
-A Caddy plugin that provides intelligent failover between multiple upstream servers with support for mixed HTTP/HTTPS schemes.
+A comprehensive Caddy plugin that provides intelligent failover between multiple upstream servers with mixed HTTP/HTTPS support, health checking, and OpenAPI documentation capabilities.
 
 ## Features
 
-- **Mixed-scheme failover**: Supports both HTTP and HTTPS upstreams in the same directive
-- **Intelligent failover**: Automatically fails over to next upstream on connection errors or 5xx responses
-- **Health checks**: Optional per-upstream health checks to proactively detect unhealthy servers
-- **Per-upstream headers**: Configure different headers for each upstream
-- **Failure caching**: Remembers failed upstreams for configurable duration to avoid repeated attempts
-- **TLS configuration**: Supports skipping certificate verification for development environments
-- **Path base support**: Upstreams can have different base paths that are preserved in routing
-- **Environment variables**: Supports environment variable expansion in upstream URLs and header values
-- **Debug logging**: Comprehensive logging for troubleshooting upstream selection
+- **Intelligent Failover**: Automatic failover between multiple upstreams with health checking
+- **Mixed-scheme Support**: HTTP and HTTPS upstreams in the same directive
+- **API Documentation**: Built-in Swagger UI, Redoc, and OpenAPI spec generation
+- **Health Monitoring**: Per-upstream health checks with configurable intervals
+- **Status Dashboard**: Real-time status endpoint for all failover proxies
+- **Per-upstream Configuration**: Different headers and settings for each upstream
+- **Environment Variables**: Full support for environment variable expansion
+- **Path Preservation**: Maintains upstream base paths in routing
 
-## Testing
+## Quick Start
 
-The plugin includes comprehensive tests with a convenient test runner script.
-
-### Quick Start
+### Using Docker (Recommended)
 
 ```bash
-# Run all tests
-./scripts/test.sh all
+# Pull the latest image
+docker pull ghcr.io/ejlevin1/caddy-failover:latest
 
-# Run unit tests only
-./scripts/test.sh unit
-
-# Run with coverage report
-./scripts/test.sh coverage
-
-# Run with race detector
-./scripts/test.sh race
-
-# Run benchmarks
-./scripts/test.sh benchmark
-
-# Run integration tests
-./scripts/test.sh integration
-
-# Test status endpoint manually
-./scripts/test.sh status
+# Run with your Caddyfile
+docker run -d \
+  -p 80:80 \
+  -p 443:443 \
+  -p 2019:2019 \
+  -v $(pwd)/Caddyfile:/etc/caddy/Caddyfile \
+  ghcr.io/ejlevin1/caddy-failover:latest
 ```
-
-### Test Commands
-
-The `scripts/test.sh` script provides the following commands:
-
-| Command | Description |
-|---------|-------------|
-| `unit` | Run unit tests only |
-| `integration` | Run integration tests (builds Caddy with plugin) |
-| `benchmark` | Run performance benchmarks |
-| `all` | Run all tests (unit + integration) |
-| `coverage` | Run tests with coverage report (generates HTML report) |
-| `race` | Run tests with race detector |
-| `quick` | Run quick tests (excludes integration tests) |
-| `status` | Test the failover status endpoint manually |
-| `help` | Show help message |
-
-### Options
-
-- `-v, --verbose`: Run with verbose output
-- `-c, --coverage`: Generate coverage report
-- `-r, --race`: Enable race detector
-
-### Examples
-
-```bash
-# Run unit tests with verbose output
-./scripts/test.sh unit -v
-
-# Run all tests with coverage and race detection
-./scripts/test.sh all -c -r
-
-# Quick test during development (no integration tests)
-./scripts/test.sh quick
-
-# Run benchmarks
-./scripts/test.sh benchmark
-```
-
-### Manual Test Commands
-
-If you prefer running tests directly with `go test`:
-
-```bash
-# Run all tests
-go test ./...
-
-# Run with race detection
-go test -race ./...
-
-# Run with coverage
-go test -coverprofile=coverage.out -covermode=atomic ./...
-go tool cover -html=coverage.out -o coverage.html
-
-# Run benchmarks
-go test -bench=. -benchmem -run=^$ ./...
-
-# Run only unit tests (skip integration)
-go test -short ./...
-
-# Run specific test
-go test -v -run TestProxyRegistry ./...
-```
-
-### Test Structure
-
-```
-.
-├── failover_test.go           # Core unit tests
-├── failover_integration_test.go # Integration tests with caddytest
-├── failover_benchmark_test.go  # Performance benchmarks
-├── failover_handler_test.go    # HTTP handler tests
-├── test_helpers.go             # Shared test utilities
-├── testdata/                   # Test fixtures
-│   ├── basic.Caddyfile
-│   ├── complex.Caddyfile
-│   └── expected_status.json
-├── scripts/
-│   └── test.sh                # Test runner script
-└── test/
-    └── test.sh                # Docker-based integration tests
-```
-
-### Docker Integration Tests
-
-For full end-to-end testing with Docker containers:
-
-```bash
-# Run Docker-based integration tests
-make docker-test
-# or directly:
-./test/test.sh
-```
-
-The Docker tests complement the Go tests by:
-- Building a real Caddy binary with the plugin
-- Running Caddy in a Docker container
-- Testing against actual mock HTTP servers in containers
-- Validating networking, failover, and header propagation
-- Testing the plugin in a production-like environment
-
-Additional Docker test scripts:
-- `./test/test-failover-status.sh` - Tests the status endpoint
-- `./test/test-failover-logs.sh` - Validates logging and health check headers
-
-### CI/CD Testing
-
-GitHub Actions automatically runs tests using the `scripts/test.sh` script:
-- **Unit tests**: Run on every push and PR with coverage and race detection
-- **Integration tests**: Run on pull requests with verbose output showing status endpoint
-- **Benchmarks**: Run after unit tests pass
-- **Coverage reports**: Generated and uploaded to Codecov
-
-### Test Categories
-
-1. **Unit Tests** (`failover_test.go`): Test individual components like registry, path handling, and configuration parsing
-2. **Handler Tests** (`failover_handler_test.go`): Test HTTP request handling, headers, retries, and concurrent access
-3. **Integration Tests** (`failover_integration_test.go`): Test full Caddy server with the plugin configured
-4. **Benchmarks** (`failover_benchmark_test.go`): Measure performance of critical paths
-
-### Writing Tests
-
-Tests follow Go best practices:
-- Table-driven tests for comprehensive coverage
-- Test helpers for reducing boilerplate
-- Mock servers for testing HTTP interactions
-- Proper cleanup with `t.Cleanup()`
-- Concurrent testing where appropriate
-
-Example test structure:
-```go
-func TestFeature(t *testing.T) {
-    tests := []struct {
-        name     string
-        input    someType
-        expected expectedType
-    }{
-        {"test case 1", input1, expected1},
-        {"test case 2", input2, expected2},
-    }
-
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            // test implementation
-        })
-    }
-}
-```
-
-## Installation
 
 ### Using xcaddy
 
-Build Caddy with this plugin using [xcaddy](https://github.com/caddyserver/xcaddy):
-
 ```bash
+# Build Caddy with the plugin
 xcaddy build --with github.com/ejlevin1/caddy-failover
+
+# Run with your Caddyfile
+./caddy run --config Caddyfile
 ```
 
-Or from a local clone:
+## Configuration Guide
 
-```bash
-xcaddy build --with github.com/ejlevin1/caddy-failover=.
-```
+### Global Configuration
 
-### Using Docker
-
-Pull the pre-built image with semantic versioning tags:
-
-```bash
-# Latest version
-docker pull ghcr.io/ejlevin1/caddy-failover:latest
-
-# Specific version
-docker pull ghcr.io/ejlevin1/caddy-failover:1.6.1
-
-# Major version (gets latest 1.x.x)
-docker pull ghcr.io/ejlevin1/caddy-failover:1
-```
-
-Or build your own:
-
-```bash
-docker build -t caddy-failover .
-```
-
-#### Extended Docker Images (-loaded variant)
-
-In addition to the standard images, we provide `-loaded` variants that include additional Caddy plugins pre-installed:
-
-- [caddy-admin-ui](https://github.com/gsmlg-dev/caddy-admin-ui) - Web UI for managing Caddy configuration
-- [caddy-docker-proxy](https://github.com/lucaslorentz/caddy-docker-proxy) - Automatic reverse proxy for Docker containers
-
-These images follow the same versioning pattern with a `-loaded` suffix:
-
-```bash
-# Latest loaded version
-docker pull ghcr.io/ejlevin1/caddy-failover:latest-loaded
-
-# Specific loaded version
-docker pull ghcr.io/ejlevin1/caddy-failover:1.6.1-loaded
-
-# Major loaded version (gets latest 1.x.x-loaded)
-docker pull ghcr.io/ejlevin1/caddy-failover:1-loaded
-```
-
-##### Using the Admin UI Plugin
-
-The caddy-admin-ui plugin provides a web interface for the Caddy admin API. To use it, configure it in your Caddyfile:
+The plugin requires global configuration to set directive ordering and API registrar settings:
 
 ```caddyfile
 {
+    # Required: Set directive ordering
+    order failover_proxy before reverse_proxy
+    order failover_status before respond
+    order caddy_api_registrar before respond
+
+    # Optional: Admin API endpoint
     admin :2019
-    order failover_proxy before reverse_proxy
-}
 
-:8080 {
-    route {
-        caddy_admin_ui
-        reverse_proxy localhost:2019 {
-            header_up Host localhost:2019
+    # Optional: API Registrar configuration for OpenAPI documentation
+    caddy_api_registrar {
+        # Register Caddy's admin API documentation
+        caddy_api {
+            path /caddy-admin
+            title "Caddy Admin API"
+            version "2.0"
+        }
+
+        # Register failover plugin API documentation
+        failover_api {
+            path /caddy/failover
+            title "Failover Plugin API"
+            version "1.0"
         }
     }
-}
 
-# Your regular site configuration
-https://localhost:443 {
-    # ... your failover_proxy configuration ...
+    # Optional: Enable debug logging
+    # debug
 }
 ```
 
-Then access the admin UI at `http://localhost:8080`.
-
-##### Using the Docker Proxy Plugin
-
-The caddy-docker-proxy plugin allows Caddy to automatically configure reverse proxy routes based on Docker container labels. To use it:
-
-1. Run the Caddy container with access to the Docker socket:
-
-```yaml
-version: '3.8'
-
-services:
-  caddy:
-    image: ghcr.io/ejlevin1/caddy-failover:latest-loaded
-    container_name: caddy-failover-loaded
-    ports:
-      - "80:80"
-      - "443:443"
-      - "2019:2019"  # Admin API
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    environment:
-      CADDY_DOCKER_CADDYFILE_PATH: /etc/caddy/Caddyfile
-    restart: unless-stopped
-    command: ["caddy", "docker-proxy"]
-
-volumes:
-  caddy_data:
-  caddy_config:
-```
-
-2. Add labels to your containers:
-
-```yaml
-  app:
-    image: your-app:latest
-    labels:
-      caddy: app.example.com
-      caddy.reverse_proxy: "{{upstreams 8080}}"
-      caddy.handle_path: /api/*
-      caddy.handle_path.0.failover_proxy: "{{upstreams 8080}} http://backup:8080"
-```
-
-The Docker proxy will automatically detect container changes and update Caddy's configuration.
-
-**Note:** When using the Docker proxy plugin, ensure proper network configuration and security measures, as it requires access to the Docker socket.
-
-## Usage
-
-### Caddyfile Configuration
-
-First, add the global order directive to tell Caddy where to place the `failover_proxy` handler:
+### Basic Failover Configuration
 
 ```caddyfile
-{
-    order failover_proxy before reverse_proxy
-}
-```
-
-Then use the `failover_proxy` directive in your site blocks:
-
-```caddyfile
-https://localhost:443 {
-    handle /api/* {
-        failover_proxy http://localhost:3000 https://api.example.com {
-            fail_duration 3s
-            dial_timeout 2s
-            response_timeout 5s
-            insecure_skip_verify
-
-            # Headers for HTTP upstream
-            header_up http://localhost:3000 X-Source local
-            header_up http://localhost:3000 Host api.example.com
-
-            # Headers for HTTPS upstream
-            header_up https://api.example.com X-Source remote
-        }
-    }
-}
-```
-
-### Configuration Options
-
-- `fail_duration` - How long to remember failed upstreams (default: 30s)
-- `dial_timeout` - Connection timeout (default: 2s)
-- `response_timeout` - Response timeout (default: 5s)
-- `insecure_skip_verify` - Skip TLS certificate verification
-- `header_up <upstream> <name> <value>` - Set upstream-specific headers
-- `health_check <upstream> { ... }` - Configure health checks for an upstream
-- `status_path <path>` - Set the path identifier for status reporting
-
-#### Health Check Options
-
-Configure health checks for each upstream to proactively detect unhealthy servers:
-
-```caddyfile
-health_check <upstream_url> {
-    path /health          # Health check endpoint (default: /health)
-    interval 30s          # Check interval (default: 30s)
-    timeout 5s            # Check timeout (default: 5s)
-    expected_status 200   # Expected HTTP status (default: 200)
-}
-```
-
-### Path Base Support
-
-Upstreams can have different base paths. The plugin automatically preserves and combines the upstream base path with the incoming request path:
-
-```caddyfile
-:8080 {
-    handle {
-        # Request to /gateway will be proxied to:
-        # - http://test.com/gateway (no base path)
-        # - http://test2.com/path/gateway (with /path base)
-        failover_proxy http://test.com http://test2.com/path/
-    }
-}
-```
-
-### X-Forwarded-Proto Header
-
-The plugin correctly sets the `X-Forwarded-Proto` header based on the actual inbound protocol (HTTP or HTTPS), not hardcoded. It also preserves any existing `X-Forwarded-Proto` header from upstream proxies.
-
-### Debug Logging
-
-The plugin provides detailed debug logging to help troubleshoot failover behavior. To enable debug logging in Caddy, use:
-
-```bash
-# Start Caddy with debug logging
-caddy run --config Caddyfile --adapter caddyfile --environ --debug
-
-# Or set the log level in your Caddyfile
-{
-    debug
-}
-```
-
-The plugin logs:
-- Which upstream is being attempted
-- The full target URL being proxied to
-- Success/failure of each upstream attempt
-- When upstreams are skipped due to previous failures
-
-## Examples
-
-### IDE-First Development
-
-Route to local IDE first, fall back to remote development server:
-
-```caddyfile
-{
-    order failover_proxy before reverse_proxy
-}
-
 :443 {
-    handle /admin/* {
-        failover_proxy http://localhost:5041 https://dev.example.com {
-            fail_duration 3s
-            dial_timeout 2s
-            response_timeout 5s
-            insecure_skip_verify
-
-            header_up http://localhost:5041 X-Environment local-ide
-            header_up https://dev.example.com X-Environment remote-dev
-        }
-    }
-}
-```
-
-### Multi-Tier Failover
-
-Try local, then Docker, then production:
-
-```caddyfile
-{
-    order failover_proxy before reverse_proxy
-}
-
-:443 {
+    # Simple failover between two upstreams
     handle /api/* {
-        failover_proxy http://localhost:3000 http://api:3000 https://api.production.com {
+        failover_proxy http://primary.local:3000 http://backup.local:3000 {
             fail_duration 5s
             dial_timeout 2s
             response_timeout 10s
-
-            header_up http://localhost:3000 X-Tier local
-            header_up http://api:3000 X-Tier docker
-            header_up https://api.production.com X-Tier production
         }
     }
 }
 ```
 
-### With Health Checks
-
-Configure health checks to proactively detect unhealthy upstreams:
+### Advanced Failover with Health Checks
 
 ```caddyfile
-{
-    order failover_proxy before reverse_proxy
-}
-
 :443 {
     handle /api/* {
-        failover_proxy http://primary.local https://backup.cloud {
+        failover_proxy http://primary.local:3000 https://backup.cloud {
+            # Basic settings
             fail_duration 10s
+            dial_timeout 2s
+            response_timeout 5s
+            insecure_skip_verify  # For self-signed certs in dev
 
-            # Health check for primary
-            health_check http://primary.local {
+            # Status tracking (required for status endpoint)
+            status_path /api/*
+
+            # Health check for primary upstream
+            health_check http://primary.local:3000 {
                 path /health
                 interval 30s
                 timeout 5s
                 expected_status 200
             }
 
-            # Health check for backup
+            # Health check for backup upstream
             health_check https://backup.cloud {
                 path /status
                 interval 60s
                 timeout 10s
                 expected_status 204
             }
+
+            # Per-upstream headers
+            header_up http://primary.local:3000 X-Environment development
+            header_up http://primary.local:3000 X-Source local
+            header_up https://backup.cloud X-Environment production
+            header_up https://backup.cloud Host api.backup.cloud
         }
     }
 }
 ```
 
-### Path Base Support
+## API Documentation Endpoints
 
-Upstreams can have different base paths that are preserved:
+The plugin includes built-in API documentation generation with Swagger UI and Redoc support.
+
+### Setting Up API Documentation
 
 ```caddyfile
 {
+    # Global configuration (required)
     order failover_proxy before reverse_proxy
-}
+    order failover_status before respond
+    order caddy_api_registrar before respond
 
-:443 {
-    handle /gateway/* {
-        # Request to /gateway/api becomes:
-        # - http://service1.local/gateway/api
-        # - http://service2.local/v2/gateway/api
-        failover_proxy http://service1.local http://service2.local/v2 {
-            fail_duration 5s
+    # Configure which APIs to document
+    caddy_api_registrar {
+        failover_api {
+            path /caddy/failover
+            title "Failover Plugin API"
+            version "1.0.0"
+        }
+        caddy_api {
+            path /caddy-admin
+            title "Caddy Admin API"
+            version "2.0"
         }
     }
 }
-```
-
-### Environment Variables
-
-The plugin supports environment variable expansion in upstream URLs and header values using Caddy's standard `{env.VARIABLE_NAME}` syntax:
-
-```caddyfile
-{
-    order failover_proxy before reverse_proxy
-}
 
 :443 {
+    # Swagger UI endpoint
+    handle /api/docs {
+        caddy_api_registrar swagger-ui
+    }
+
+    # Alternative with trailing slash support
+    handle /api/docs* {
+        caddy_api_registrar swagger-ui
+    }
+
+    # Redoc UI endpoint
+    handle /api/docs/redoc* {
+        caddy_api_registrar redoc
+    }
+
+    # Raw OpenAPI JSON endpoints
+    handle /api/docs/openapi.json {
+        caddy_api_registrar openapi-v3.0
+    }
+
+    handle /api/docs/openapi-3.1.json {
+        caddy_api_registrar openapi-v3.1
+    }
+
+    # Your failover configurations...
     handle /api/* {
-        # Environment variables in upstream URLs
-        failover_proxy http://{env.PRIMARY_HOST}:3000 https://{env.BACKUP_HOST} {
-            fail_duration 5s
-
-            # Environment variables in header values
-            header_up http://{env.PRIMARY_HOST}:3000 X-Environment {env.ENVIRONMENT}
-            header_up http://{env.PRIMARY_HOST}:3000 X-API-Key {env.API_KEY}
-            header_up https://{env.BACKUP_HOST} X-Environment production
+        failover_proxy http://localhost:3000 http://backup:3000 {
+            status_path /api/*
         }
     }
 }
 ```
 
-Set the environment variables when running Caddy:
+### Accessing API Documentation
 
-```bash
-export PRIMARY_HOST=localhost
-export BACKUP_HOST=api.example.com
-export ENVIRONMENT=development
-export API_KEY=secret-key-123
+Once configured, you can access:
+- **Swagger UI**: `https://your-domain/api/docs/`
+- **Redoc UI**: `https://your-domain/api/docs/redoc/`
+- **OpenAPI 3.0 JSON**: `https://your-domain/api/docs/openapi.json`
+- **OpenAPI 3.1 JSON**: `https://your-domain/api/docs/openapi-3.1.json`
 
-caddy run --config Caddyfile
-```
+## Status Monitoring
 
-Or with Docker:
+The plugin provides a real-time status endpoint to monitor all configured failover proxies.
 
-```bash
-docker run -d \
-    -e PRIMARY_HOST=host.docker.internal \
-    -e BACKUP_HOST=api.example.com \
-    -e ENVIRONMENT=development \
-    -e API_KEY=secret-key-123 \
-    -v $(pwd)/Caddyfile:/etc/caddy/Caddyfile \
-    -p 443:443 \
-    ghcr.io/ejlevin1/caddy-failover:latest
-```
+### Configuring Status Endpoint
 
-### Status API
-
-Monitor the health and status of all failover proxies via REST API:
-
-**Important**: The `failover_status` directive requires proper ordering. Choose one of these approaches:
-
-**Option 1: Use global order directive (recommended)**
 ```caddyfile
 {
+    # Required global ordering
     order failover_proxy before reverse_proxy
     order failover_status before respond
 }
@@ -595,47 +228,45 @@ Monitor the health and status of all failover proxies via REST API:
         failover_status
     }
 
-    # Proxies with status tracking
-    handle /auth/* {
-        failover_proxy http://auth1.local http://auth2.local {
-            # status_path is recommended for clear path identification
-            # If not specified, an auto-generated identifier will be used
-            status_path /auth/*
-            health_check http://auth1.local {
+    # Failover proxies with status tracking
+    handle /api/* {
+        failover_proxy http://api1.local http://api2.local {
+            # IMPORTANT: status_path enables tracking for this proxy
+            status_path /api/*
+            fail_duration 5s
+
+            health_check http://api1.local {
                 path /health
                 interval 30s
             }
         }
     }
-}
-```
 
-**Option 2: Use route instead of handle (no order directive needed)**
-```caddyfile
-:443 {
-    # Status endpoint using route (doesn't require ordering)
-    route /admin/failover/status {
-        failover_status
+    handle /auth/* {
+        failover_proxy http://auth1.local http://auth2.local {
+            status_path /auth/*
+            fail_duration 5s
+        }
     }
 }
 ```
 
-The status endpoint returns JSON with the current state of all upstreams:
+### Status Response Format
 
 ```json
 [
     {
-        "path": "/auth/*",
+        "path": "/api/*",
         "failover_proxies": [
             {
-                "host": "http://auth1.local",
+                "host": "http://api1.local",
                 "status": "UP",
                 "health_check_enabled": true,
                 "last_check": "2024-01-15T10:30:45Z",
                 "response_time_ms": 125
             },
             {
-                "host": "http://auth2.local",
+                "host": "http://api2.local",
                 "status": "DOWN",
                 "health_check_enabled": false,
                 "last_failure": "2024-01-15T10:29:30Z"
@@ -645,54 +276,544 @@ The status endpoint returns JSON with the current state of all upstreams:
 ]
 ```
 
-Status values:
-- `UP` - Upstream is healthy and accepting requests
-- `DOWN` - Upstream failed recently and is in failure cache
-- `UNHEALTHY` - Health check is failing for this upstream
+## Handle vs Route Directives
 
-## Building from Source
+Caddy offers two ways to configure request handling: `handle` and `route`. Understanding the difference is crucial for proper failover configuration.
 
-### Prerequisites
+### Using `handle` (Requires Global Ordering)
+
+```caddyfile
+{
+    # Global ordering required when using handle
+    order failover_proxy before reverse_proxy
+    order failover_status before respond
+}
+
+:443 {
+    # handle blocks are mutually exclusive
+    # Only ONE handle block matches per request
+    handle /api/* {
+        failover_proxy http://api1.local http://api2.local
+    }
+
+    handle /auth/* {
+        failover_proxy http://auth1.local http://auth2.local
+    }
+
+    handle {
+        # Default handler for everything else
+        respond "Not found" 404
+    }
+}
+```
+
+### Using `route` (No Global Ordering Needed)
+
+```caddyfile
+# No global ordering needed with route
+
+:443 {
+    # route blocks preserve directive order explicitly
+    route /api/* {
+        failover_proxy http://api1.local http://api2.local
+    }
+
+    route /auth/* {
+        failover_proxy http://auth1.local http://auth2.local
+    }
+
+    # Can combine route and handle
+    handle /status {
+        route {
+            failover_status
+        }
+    }
+}
+```
+
+### Key Differences
+
+| Aspect | `handle` | `route` |
+|--------|----------|---------|
+| **Ordering** | Requires global `order` directive | Order is explicit in config |
+| **Matching** | Mutually exclusive (only one matches) | All matching routes execute |
+| **Use Case** | Simple path-based routing | Complex routing with multiple directives |
+| **Performance** | Slightly faster | Slightly slower (but negligible) |
+
+## Complete Example Configuration
+
+Here's a comprehensive example showing all features:
+
+```caddyfile
+{
+    # Global configuration
+    order failover_proxy before reverse_proxy
+    order failover_status before respond
+    order caddy_api_registrar before respond
+
+    # Admin API
+    admin :2019
+
+    # API documentation configuration
+    caddy_api_registrar {
+        failover_api {
+            path /caddy/failover
+            title "Failover Plugin API"
+            version "1.0.0"
+        }
+        caddy_api {
+            path /caddy-admin
+            title "Caddy Admin API"
+            version "2.0"
+        }
+    }
+
+    # Optional: Enable debug logging
+    # debug
+}
+
+# HTTPS server
+https://localhost:443 {
+    # API Documentation endpoints
+    handle /api/docs* {
+        caddy_api_registrar swagger-ui
+    }
+
+    handle /api/docs/redoc* {
+        caddy_api_registrar redoc
+    }
+
+    handle /api/docs/openapi.json {
+        caddy_api_registrar openapi-v3.0
+    }
+
+    # Status monitoring endpoint
+    handle /admin/failover/status {
+        failover_status
+    }
+
+    # Admin API proxy
+    handle /caddy-admin/* {
+        uri strip_prefix /caddy-admin
+        reverse_proxy localhost:2019
+    }
+
+    # Application API with failover
+    handle /api/* {
+        failover_proxy http://localhost:3000 http://docker:3000 https://api.production.com {
+            # Timeouts
+            fail_duration 5s
+            dial_timeout 2s
+            response_timeout 10s
+
+            # Enable status tracking
+            status_path /api/*
+
+            # Skip cert verification for dev
+            insecure_skip_verify
+
+            # Health checks
+            health_check http://localhost:3000 {
+                path /health
+                interval 30s
+                timeout 5s
+                expected_status 200
+            }
+
+            health_check http://docker:3000 {
+                path /health
+                interval 30s
+                timeout 5s
+                expected_status 200
+            }
+
+            health_check https://api.production.com {
+                path /health
+                interval 60s
+                timeout 10s
+                expected_status 200
+            }
+
+            # Per-upstream headers
+            header_up http://localhost:3000 X-Environment local
+            header_up http://docker:3000 X-Environment docker
+            header_up https://api.production.com X-Environment production
+            header_up https://api.production.com Host api.production.com
+        }
+    }
+
+    # Authentication service with failover
+    handle /auth/* {
+        failover_proxy http://auth1.local:8080 http://auth2.local:8080 {
+            status_path /auth/*
+            fail_duration 3s
+
+            header_up http://auth1.local:8080 X-Service auth-primary
+            header_up http://auth2.local:8080 X-Service auth-backup
+        }
+    }
+
+    # Default handler
+    handle {
+        respond "Not found" 404
+    }
+}
+
+# HTTP server with redirect
+http://localhost:80 {
+    # Health check endpoint (doesn't redirect)
+    handle /health {
+        respond "OK" 200
+    }
+
+    # Redirect everything else to HTTPS
+    handle {
+        redir https://localhost:443{uri} permanent
+    }
+}
+```
+
+## Configuration Options Reference
+
+### Failover Proxy Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `fail_duration` | How long to remember failed upstreams | `30s` |
+| `dial_timeout` | Connection timeout | `2s` |
+| `response_timeout` | Response timeout | `5s` |
+| `insecure_skip_verify` | Skip TLS certificate verification | `false` |
+| `status_path` | Path identifier for status reporting | (auto-generated) |
+| `header_up <upstream> <name> <value>` | Set upstream-specific headers | - |
+| `health_check <upstream> { ... }` | Configure health checks | - |
+
+### Health Check Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `path` | Health check endpoint path | `/health` |
+| `interval` | Check interval | `30s` |
+| `timeout` | Check timeout | `5s` |
+| `expected_status` | Expected HTTP status code | `200` |
+
+### API Registrar Formats
+
+| Format | Description |
+|--------|-------------|
+| `swagger-ui` | Interactive Swagger UI interface |
+| `redoc` | Clean Redoc documentation interface |
+| `openapi-v3.0` | OpenAPI 3.0 JSON specification |
+| `openapi-v3.1` | OpenAPI 3.1 JSON specification |
+
+## Docker Images
+
+### Available Images
+
+```bash
+# Standard image (failover plugin only)
+docker pull ghcr.io/ejlevin1/caddy-failover:latest
+docker pull ghcr.io/ejlevin1/caddy-failover:1.6.1
+docker pull ghcr.io/ejlevin1/caddy-failover:1
+
+# Loaded image (with additional plugins)
+docker pull ghcr.io/ejlevin1/caddy-failover:latest-loaded
+docker pull ghcr.io/ejlevin1/caddy-failover:1.6.1-loaded
+docker pull ghcr.io/ejlevin1/caddy-failover:1-loaded
+```
+
+The `-loaded` variants include:
+- [caddy-admin-ui](https://github.com/gsmlg-dev/caddy-admin-ui) - Web UI for Caddy admin
+- [caddy-docker-proxy](https://github.com/lucaslorentz/caddy-docker-proxy) - Docker container auto-discovery
+
+### Docker Compose Example
+
+```yaml
+version: '3.8'
+
+services:
+  caddy:
+    image: ghcr.io/ejlevin1/caddy-failover:latest
+    container_name: caddy-failover
+    ports:
+      - "80:80"
+      - "443:443"
+      - "2019:2019"  # Admin API
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - PRIMARY_HOST=host.docker.internal
+      - BACKUP_HOST=api.example.com
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
+```
+
+### Building Local Docker Images
+
+```bash
+# Build with custom tag
+./scripts/build-docker-with-tag.sh "my-tag"
+
+# Build loaded variant
+./scripts/build-docker-with-tag.sh "my-tag" loaded
+
+# Quick development build
+./scripts/docker-build-local.sh
+```
+
+## Environment Variables
+
+The plugin supports environment variable expansion using Caddy's `{env.VARIABLE}` syntax:
+
+```caddyfile
+:443 {
+    handle /api/* {
+        failover_proxy http://{env.PRIMARY_HOST}:3000 https://{env.BACKUP_HOST} {
+            fail_duration {env.FAIL_DURATION}
+
+            header_up http://{env.PRIMARY_HOST}:3000 X-API-Key {env.API_KEY}
+            header_up https://{env.BACKUP_HOST} X-API-Key {env.PROD_API_KEY}
+        }
+    }
+}
+```
+
+Run with environment variables:
+```bash
+export PRIMARY_HOST=localhost
+export BACKUP_HOST=api.example.com
+export API_KEY=dev-key-123
+export PROD_API_KEY=prod-key-456
+export FAIL_DURATION=5s
+
+caddy run --config Caddyfile
+```
+
+## Common Use Cases
+
+### Development Environment with IDE Priority
+
+Route to local IDE first, fall back to Docker, then production:
+
+```caddyfile
+:443 {
+    handle /api/* {
+        failover_proxy http://localhost:5000 http://docker:5000 https://api.prod.com {
+            status_path /api/*
+            fail_duration 2s
+
+            header_up http://localhost:5000 X-Environment local-ide
+            header_up http://docker:5000 X-Environment docker
+            header_up https://api.prod.com X-Environment production
+        }
+    }
+}
+```
+
+### Microservices with Different Health Endpoints
+
+```caddyfile
+:443 {
+    # User service
+    handle /user/* {
+        failover_proxy http://user1:8080 http://user2:8080 {
+            status_path /user/*
+
+            health_check http://user1:8080 {
+                path /actuator/health
+                interval 30s
+            }
+
+            health_check http://user2:8080 {
+                path /healthz
+                interval 30s
+            }
+        }
+    }
+
+    # Order service
+    handle /order/* {
+        failover_proxy http://order1:8081 http://order2:8081 {
+            status_path /order/*
+
+            health_check http://order1:8081 {
+                path /health/live
+                interval 30s
+            }
+        }
+    }
+}
+```
+
+### Geographic Failover
+
+```caddyfile
+:443 {
+    handle /api/* {
+        failover_proxy https://us-east.api.com https://us-west.api.com https://eu.api.com {
+            status_path /api/*
+            fail_duration 10s
+            response_timeout 3s
+
+            # Different timeouts for different regions
+            health_check https://us-east.api.com {
+                path /health
+                interval 30s
+                timeout 2s
+            }
+
+            health_check https://us-west.api.com {
+                path /health
+                interval 30s
+                timeout 3s
+            }
+
+            health_check https://eu.api.com {
+                path /health
+                interval 60s
+                timeout 5s
+            }
+        }
+    }
+}
+```
+
+## Troubleshooting
+
+### Enable Debug Logging
+
+```caddyfile
+{
+    debug
+}
+```
+
+Or run Caddy with debug flag:
+```bash
+caddy run --config Caddyfile --debug
+```
+
+### Common Issues
+
+1. **Directive ordering errors**
+   - Solution: Ensure global `order` directives are set correctly
+   - Use `route` instead of `handle` to avoid ordering issues
+
+2. **Status endpoint returns empty array**
+   - Solution: Add `status_path` to your failover_proxy configurations
+
+3. **Swagger UI not loading**
+   - Solution: Use `/api/docs*` with wildcard to handle trailing slashes
+
+4. **Health checks not running**
+   - Solution: Verify health check configuration and endpoint accessibility
+
+5. **Failover not triggering**
+   - Solution: Check `fail_duration` setting and debug logs
+
+## Additional Documentation
+
+For more detailed information, see the `docs/` directory:
+
+- [Docker Usage](docs/DOCKER.md) - Detailed Docker build and deployment
+- [xcaddy Usage](docs/XCADDY_USAGE.md) - Building with xcaddy
+- [Directive Ordering](docs/DIRECTIVE_ORDERING.md) - Understanding Caddy directives
+- [OpenAPI Design](docs/OPENAPI_DESIGN.md) - API documentation architecture
+- [Semantic Versioning](docs/SEMANTIC_VERSIONING.md) - Version management
+- [Git Hooks](docs/GIT_HOOKS.md) - Development workflow
+- [GitHub App Setup](docs/GITHUB_APP_SETUP.md) - GitHub Apps configuration
+- [Branch Protection](docs/BRANCH_PROTECTION.md) - Repository protection rules
+
+---
+
+## Development
+
+### Building from Source
+
+#### Prerequisites
 
 - Go 1.22 or later
-- xcaddy (optional, for building Caddy with plugins)
+- xcaddy (for building Caddy with plugins)
 
-### Build Steps
+#### Build Steps
 
-1. Clone the repository:
 ```bash
+# Clone the repository
 git clone https://github.com/ejlevin1/caddy-failover.git
 cd caddy-failover
-```
 
-2. Build with xcaddy:
-```bash
+# Build with xcaddy
 xcaddy build --with github.com/ejlevin1/caddy-failover=.
-```
 
-3. Or build the Docker image:
-```bash
+# Or build Docker image
 docker build -t caddy-failover .
 ```
 
-## Testing
+### Testing
 
-Run the test suite:
+The plugin includes comprehensive tests with convenient test runners.
 
-```bash
-./test/test.sh
-```
-
-Or use the Makefile:
+#### Quick Test Commands
 
 ```bash
-make test
+# Run all tests
+./scripts/test.sh all
+
+# Run unit tests only
+./scripts/test.sh unit
+
+# Run with coverage
+./scripts/test.sh coverage
+
+# Run with race detector
+./scripts/test.sh race
+
+# Run benchmarks
+./scripts/test.sh benchmark
+
+# Run integration tests
+./scripts/test.sh integration
 ```
 
-## Contributing
+#### Test Structure
+
+```
+.
+├── integration_test.go         # Integration tests with caddytest
+├── failover/
+│   ├── failover_test.go       # Core unit tests
+│   ├── failover_benchmark_test.go  # Performance benchmarks
+│   └── handler_test.go        # HTTP handler tests
+├── scripts/
+│   └── test.sh                # Test runner script
+└── test/
+    ├── test.sh                # Docker-based integration tests
+    ├── test-failover-logs.sh  # Test logging and health checks
+    └── test-failover-status.sh # Test status endpoint
+```
+
+#### Manual Testing
+
+```bash
+# Run specific tests
+go test -v -run TestFailoverProxy ./...
+
+# Run with race detection
+go test -race ./...
+
+# Generate coverage report
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out -o coverage.html
+```
+
+### Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
-## License
+### License
 
 Apache 2.0 - See [LICENSE](LICENSE) for details.

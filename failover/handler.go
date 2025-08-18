@@ -378,10 +378,22 @@ func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// Cleanup stops health check goroutines
+// Cleanup stops health check goroutines and closes idle connections
 func (f *FailoverProxy) Cleanup() error {
 	close(f.shutdown)
 	f.wg.Wait()
+
+	// Close idle connections to prevent socket exhaustion
+	if f.httpClient != nil {
+		if transport, ok := f.httpClient.Transport.(*http.Transport); ok {
+			transport.CloseIdleConnections()
+		}
+	}
+	if f.httpsClient != nil {
+		if transport, ok := f.httpsClient.Transport.(*http.Transport); ok {
+			transport.CloseIdleConnections()
+		}
+	}
 
 	// Unregister from global registry
 	registrationPath := f.Path

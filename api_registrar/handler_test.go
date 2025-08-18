@@ -203,3 +203,75 @@ func TestApiRegistrarHandler_EmptyRegistry(t *testing.T) {
 		t.Errorf("Expected empty paths, got %d paths", len(paths))
 	}
 }
+
+func TestApiRegistrarHandler_DynamicSpecURL(t *testing.T) {
+	// Test that Swagger UI gets correct spec URL based on request path
+	Reset()
+	defer Reset()
+
+	handler := &ApiRegistrarHandler{
+		Format: "swagger-ui",
+	}
+
+	ctx := caddy.Context{}
+	if err := handler.Provision(ctx); err != nil {
+		t.Fatalf("Provision() error = %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		requestPath string
+		expectedURL string
+	}{
+		{
+			name:        "API docs path with trailing slash",
+			requestPath: "/api/docs/",
+			expectedURL: "/api/docs/openapi.json",
+		},
+		{
+			name:        "Caddy OpenAPI path with trailing slash",
+			requestPath: "/caddy/openapi/",
+			expectedURL: "/caddy/openapi/openapi.json",
+		},
+		{
+			name:        "Custom path with trailing slash",
+			requestPath: "/custom/api/",
+			expectedURL: "/custom/api/openapi.json",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.requestPath, nil)
+			w := httptest.NewRecorder()
+
+			err := handler.ServeHTTP(w, req, nil)
+			if err != nil {
+				t.Fatalf("ServeHTTP() error = %v", err)
+			}
+
+			if w.Code != http.StatusOK {
+				t.Errorf("Expected status 200, got %d", w.Code)
+			}
+
+			// Check that the response contains the expected spec URL
+			body := w.Body.String()
+			if !contains(body, tt.expectedURL) {
+				t.Errorf("Expected response to contain spec URL %s, but it didn't", tt.expectedURL)
+			}
+		})
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
+}
+
+func containsHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

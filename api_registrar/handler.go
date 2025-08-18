@@ -58,8 +58,16 @@ func (h *ApiRegistrarHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, 
 		// For UI formatters, determine the spec URL
 		specURL := h.SpecURL
 		if specURL == "" {
-			// Build absolute path - Swagger UI needs this
-			specURL = "/api/docs/openapi.json"
+			// Build absolute path based on the current request path
+			// Remove any trailing parts to get the base path
+			basePath := r.URL.Path
+			// Remove trailing slash if present
+			if len(basePath) > 1 && basePath[len(basePath)-1] == '/' {
+				basePath = basePath[:len(basePath)-1]
+			}
+			// For paths like /caddy/openapi/ -> /caddy/openapi/openapi.json
+			// For paths like /api/docs -> /api/docs/openapi.json
+			specURL = basePath + "/openapi.json"
 		} else if specURL[0] == '.' {
 			// Convert relative path to absolute based on current request path
 			// For /api/docs with ./openapi.json -> /api/docs/openapi.json

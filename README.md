@@ -7,6 +7,51 @@
 
 A comprehensive Caddy plugin that provides intelligent failover between multiple upstream servers with mixed HTTP/HTTPS support, health checking, and OpenAPI documentation capabilities.
 
+## Table of Contents
+
+- [Features](#features)
+- [Development Setup](#development-setup)
+  - [Prerequisites](#prerequisites)
+  - [Platform-Specific Quick Install](#platform-specific-quick-install)
+- [Quick Start](#quick-start)
+  - [Using Docker (Recommended)](#using-docker-recommended)
+  - [Using xcaddy](#using-xcaddy)
+- [Configuration Guide](#configuration-guide)
+  - [Global Configuration](#global-configuration)
+  - [Basic Failover Configuration](#basic-failover-configuration)
+  - [Advanced Failover with Health Checks](#advanced-failover-with-health-checks)
+- [API Documentation Endpoints](#api-documentation-endpoints)
+  - [Setting Up API Documentation](#setting-up-api-documentation)
+  - [Accessing API Documentation](#accessing-api-documentation)
+  - [Best Practices for OpenAPI Configuration](#best-practices-for-openapi-configuration)
+- [Status Monitoring](#status-monitoring)
+  - [Configuring Status Endpoint](#configuring-status-endpoint)
+  - [Status Response Format](#status-response-format)
+- [Handle vs Route Directives](#handle-vs-route-directives)
+- [Complete Example Configuration](#complete-example-configuration)
+- [Configuration Options Reference](#configuration-options-reference)
+  - [Failover Proxy Options](#failover-proxy-options)
+  - [Health Check Options](#health-check-options)
+  - [API Registrar Formats](#api-registrar-formats)
+- [Docker Images](#docker-images)
+  - [Available Images](#available-images)
+  - [Docker Compose Example](#docker-compose-example)
+  - [Building Local Docker Images](#building-local-docker-images)
+- [Environment Variables](#environment-variables)
+- [Common Use Cases](#common-use-cases)
+  - [Development Environment with IDE Priority](#development-environment-with-ide-priority)
+  - [Microservices with Different Health Endpoints](#microservices-with-different-health-endpoints)
+  - [Geographic Failover](#geographic-failover)
+- [Troubleshooting](#troubleshooting)
+  - [Enable Debug Logging](#enable-debug-logging)
+  - [Common Issues](#common-issues)
+- [Additional Documentation](#additional-documentation)
+- [Development](#development)
+  - [Building from Source](#building-from-source)
+  - [Testing](#testing)
+  - [Contributing](#contributing)
+  - [License](#license)
+
 ## Features
 
 - **Intelligent Failover**: Automatic failover between multiple upstreams with health checking
@@ -284,13 +329,14 @@ The plugin includes built-in API documentation generation with Swagger UI and Re
 }
 
 :443 {
-    # Swagger UI endpoint
-    handle /api/docs {
-        caddy_api_registrar swagger-ui
-    }
-
-    # Alternative with trailing slash support
+    # RECOMMENDED: Combined Swagger UI with redirect handling
+    # This pattern handles both /api/docs and /api/docs/ correctly
     handle /api/docs* {
+        # Redirect /api/docs to /api/docs/ for proper Swagger UI loading
+        @no_slash path /api/docs
+        redir @no_slash /api/docs/ 302
+
+        # Serve Swagger UI for all paths under /api/docs/
         caddy_api_registrar swagger-ui
     }
 
@@ -320,10 +366,34 @@ The plugin includes built-in API documentation generation with Swagger UI and Re
 ### Accessing API Documentation
 
 Once configured, you can access:
-- **Swagger UI**: `https://your-domain/api/docs/`
+- **Swagger UI**: `https://your-domain/api/docs/` (note: trailing slash required)
 - **Redoc UI**: `https://your-domain/api/docs/redoc/`
 - **OpenAPI 3.0 JSON**: `https://your-domain/api/docs/openapi.json`
 - **OpenAPI 3.1 JSON**: `https://your-domain/api/docs/openapi-3.1.json`
+
+### Best Practices for OpenAPI Configuration
+
+1. **Always use wildcards for UI endpoints**: This ensures proper handling of sub-resources:
+   ```caddyfile
+   handle /api/docs* {  # Good - handles all paths under /api/docs
+   ```
+
+2. **Include redirect handling**: Swagger UI requires a trailing slash to load properly:
+   ```caddyfile
+   @no_slash path /api/docs
+   redir @no_slash /api/docs/ 302
+   ```
+
+3. **Keep UI and JSON endpoints together**: Place them at the same path level for consistency:
+   ```caddyfile
+   /api/docs/           # Swagger UI
+   /api/docs/openapi.json  # OpenAPI spec
+   ```
+
+4. **Test your endpoints**: Use the included test script:
+   ```bash
+   ./test/test-openapi-endpoints.sh
+   ```
 
 ## Status Monitoring
 
@@ -835,17 +905,37 @@ caddy run --config Caddyfile --debug
 2. **Status endpoint returns empty array**
    - Solution: Add `status_path` to your failover_proxy configurations
 
-3. **Swagger UI not loading**
-   - Solution: Use `/api/docs*` with wildcard to handle trailing slashes
+3. **Swagger UI not loading or blank page**
+   - Common causes:
+     - Missing trailing slash (Swagger UI needs `/api/docs/` not `/api/docs`)
+     - Incorrect handle block configuration
+   - Solution: Use the recommended pattern with redirect and wildcard:
+     ```caddyfile
+     handle /api/docs* {
+         @no_slash path /api/docs
+         redir @no_slash /api/docs/ 302
+         caddy_api_registrar swagger-ui
+     }
+     ```
 
-4. **Health checks not running**
+4. **OpenAPI spec not found (404 error in Swagger UI)**
+   - Cause: The API registrar dynamically generates spec paths based on the request URL
+   - Solution: Ensure OpenAPI JSON endpoints are configured at the expected paths:
+     ```caddyfile
+     # If Swagger UI is at /api/docs/, it expects:
+     handle /api/docs/openapi.json {
+         caddy_api_registrar openapi-v3.0
+     }
+     ```
+
+5. **Health checks not running**
    - Solution: Verify health check configuration and endpoint accessibility
    - Ensure each `health_check` specifies its upstream URL
 
-5. **Failover not triggering**
+6. **Failover not triggering**
    - Solution: Check `fail_duration` setting and debug logs
 
-6. **"Unknown subdirective" errors**
+7. **"Unknown subdirective" errors**
    - Common mistakes:
      - Using `timeout` instead of `dial_timeout` or `response_timeout`
      - Using `retry_count` or `retry_delay` (not supported)

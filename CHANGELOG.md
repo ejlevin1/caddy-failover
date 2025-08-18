@@ -1,3 +1,17 @@
+# [1.9.0](https://github.com/ejlevin1/caddy-failover/compare/v1.8.0...v1.9.0) (2025-08-18)
+
+
+### Bug Fixes
+
+* ensure failover status endpoint always returns data ([f583894](https://github.com/ejlevin1/caddy-failover/commit/f583894c4090d9d0562d2f90b5baae2ee39e13f7))
+* prevent codecov rate limits by optimizing upload strategy ([18b3ebc](https://github.com/ejlevin1/caddy-failover/commit/18b3ebca851c84eb1862fff9132a25b45f519471))
+* restore testdata files for CI/CD validation ([2bee3bd](https://github.com/ejlevin1/caddy-failover/commit/2bee3bd0d87c15aa9e2d5c2916e8fb1233f48052))
+
+
+### Features
+
+* implement format-agnostic API registrar module with UI support ([3e32cd7](https://github.com/ejlevin1/caddy-failover/commit/3e32cd796f37f491aa89aa1c3060e59518ebc199))
+
 # [1.8.0](https://github.com/ejlevin1/caddy-failover/compare/v1.7.0...v1.8.0) (2025-08-17)
 
 

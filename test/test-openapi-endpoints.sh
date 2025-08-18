@@ -18,10 +18,8 @@ echo "========================================="
 echo ""
 
 # Configuration
-# Try to find an available port if not set
-if [ -z "$CADDY_PORT" ]; then
-    CADDY_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()' 2>/dev/null || echo "9443")
-fi
+# For private-test example, the port is 9444
+CADDY_PORT="${CADDY_PORT:-9444}"
 CADDY_HOST="${CADDY_HOST:-localhost}"
 BASE_URL="https://${CADDY_HOST}:${CADDY_PORT}"
 
@@ -94,7 +92,7 @@ fi
 
 # Check if Caddy is running
 echo -e "${BLUE}Checking Caddy server...${NC}"
-if curl -s -k "${BASE_URL}/health" > /dev/null 2>&1; then
+if curl -s -k "${BASE_URL}/caddy/health" > /dev/null 2>&1; then
     echo -e "${GREEN}✓ Caddy is running${NC}"
 else
     echo -e "${RED}✗ Caddy is not running or not accessible at ${BASE_URL}${NC}"
@@ -111,11 +109,11 @@ passed_tests=0
 echo -e "${YELLOW}=== Swagger UI Tests ===${NC}"
 echo ""
 
-test_endpoint "/api/docs" "swagger-ui" "Swagger UI (root)"
+test_endpoint "/caddy/openapi/" "swagger-ui" "Swagger UI"
 [ $? -eq 0 ] && ((passed_tests++))
 ((total_tests++))
 
-test_endpoint "/api/docs/" "SwaggerUIBundle" "Swagger UI (with trailing slash)"
+test_endpoint "/caddy/openapi/" "SwaggerUIBundle" "Swagger UI JavaScript loaded"
 [ $? -eq 0 ] && ((passed_tests++))
 ((total_tests++))
 
@@ -125,11 +123,11 @@ echo ""
 echo -e "${YELLOW}=== Redoc UI Tests ===${NC}"
 echo ""
 
-test_endpoint "/api/docs/redoc" "redoc" "Redoc UI"
+test_endpoint "/caddy/openapi/redoc" "redoc" "Redoc UI"
 [ $? -eq 0 ] && ((passed_tests++))
 ((total_tests++))
 
-test_endpoint "/api/docs/redoc/" "spec-url" "Redoc UI (with trailing slash)"
+test_endpoint "/caddy/openapi/redoc" "spec-url" "Redoc spec URL configured"
 [ $? -eq 0 ] && ((passed_tests++))
 ((total_tests++))
 
@@ -140,27 +138,27 @@ echo -e "${YELLOW}=== OpenAPI JSON Tests ===${NC}"
 echo ""
 
 if command -v jq &> /dev/null; then
-    test_json_endpoint "/api/docs/openapi.json" ".openapi" "OpenAPI 3.0 JSON"
+    test_json_endpoint "/caddy/openapi/openapi.json" ".openapi" "OpenAPI 3.0 JSON"
     [ $? -eq 0 ] && ((passed_tests++))
     ((total_tests++))
 
-    test_json_endpoint "/api/docs/openapi.json" ".info.title" "OpenAPI Info Title"
+    test_json_endpoint "/caddy/openapi/openapi.json" ".info.title" "OpenAPI Info Title"
     [ $? -eq 0 ] && ((passed_tests++))
     ((total_tests++))
 
-    test_json_endpoint "/api/docs/openapi.json" ".paths" "OpenAPI Paths"
+    test_json_endpoint "/caddy/openapi/openapi.json" ".paths" "OpenAPI Paths"
     [ $? -eq 0 ] && ((passed_tests++))
     ((total_tests++))
 
-    test_json_endpoint "/api/docs/openapi-3.1.json" ".openapi" "OpenAPI 3.1 JSON"
+    test_json_endpoint "/caddy/openapi/openapi-3.1.json" ".openapi" "OpenAPI 3.1 JSON"
     [ $? -eq 0 ] && ((passed_tests++))
     ((total_tests++))
 else
-    test_endpoint "/api/docs/openapi.json" "openapi" "OpenAPI 3.0 JSON (basic check)"
+    test_endpoint "/caddy/openapi/openapi.json" "openapi" "OpenAPI 3.0 JSON (basic check)"
     [ $? -eq 0 ] && ((passed_tests++))
     ((total_tests++))
 
-    test_endpoint "/api/docs/openapi-3.1.json" "openapi" "OpenAPI 3.1 JSON (basic check)"
+    test_endpoint "/caddy/openapi/openapi-3.1.json" "openapi" "OpenAPI 3.1 JSON (basic check)"
     [ $? -eq 0 ] && ((passed_tests++))
     ((total_tests++))
 fi

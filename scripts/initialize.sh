@@ -175,10 +175,11 @@ check_command() {
                 ;;
         esac
         print_color $GREEN "✅ $name found: $version"
-        # If it's a Go tool found in GOPATH but not in PATH, warn the user
+        # If it's a Go tool found in GOPATH but not in PATH, just inform the user
         if [[ "$cmd_path" == *"GOPATH"* ]] || [[ "$cmd_path" == */go/bin/* ]]; then
             if ! echo "$PATH" | grep -q "$(dirname "$cmd_path")"; then
-                print_color $YELLOW "   ⚠️  Found in $(dirname "$cmd_path") but not in PATH"
+                print_color $CYAN "   ℹ️  Located in $(dirname "$cmd_path")"
+                print_color $CYAN "      To add to PATH: export PATH=\$PATH:$(dirname "$cmd_path")"
             fi
         fi
         return 0
@@ -269,19 +270,27 @@ print_color $YELLOW "🔨 Build Tools:"
 print_color $YELLOW "---------------"
 # xcaddy is typically installed via go install
 check_command "xcaddy" "xcaddy" "xcaddy" "xcaddy" "xcaddy" "xcaddy" false
-if ! command -v xcaddy &> /dev/null; then
-    print_color $CYAN "   Alternative: go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest"
-fi
 check_command "make" "Make" "make" "make" "make" "make" false
 echo ""
 
-# Testing Tools
-print_color $YELLOW "🧪 Testing Tools:"
-print_color $YELLOW "-----------------"
+# Container & Testing Tools
+print_color $YELLOW "🧪 Container & Testing Tools:"
+print_color $YELLOW "-----------------------------"
 check_command "curl" "curl" "curl" "curl" "curl" "curl" true
-check_command "jq" "jq (JSON processor)" "jq" "jq" "jq" "jq" false
 check_docker
-check_command "docker-compose" "Docker Compose" "docker-compose" "docker-compose" "docker-compose" "docker-compose" false
+# Docker Compose can be standalone or part of Docker Desktop
+if command -v docker &> /dev/null && docker compose version &> /dev/null 2>&1; then
+    version=$(docker compose version 2>&1 | head -n1)
+    print_color $GREEN "✅ Docker Compose found (Docker plugin): $version"
+elif command -v docker-compose &> /dev/null; then
+    version=$(docker-compose --version 2>&1 | head -n1)
+    print_color $GREEN "✅ Docker Compose found (standalone): $version"
+else
+    print_color $YELLOW "⚠️  Docker Compose NOT found (RECOMMENDED for integration tests)"
+    print_color $CYAN "   Installation: Included with Docker Desktop or install docker-compose-plugin"
+    WARNINGS=$((WARNINGS + 1))
+fi
+check_command "jq" "jq (JSON processor)" "jq" "jq" "jq" "jq" false
 echo ""
 
 # Code Quality Tools
@@ -298,17 +307,35 @@ if ! command -v yamllint &> /dev/null; then
 fi
 echo ""
 
-# Documentation Tools
-print_color $YELLOW "📚 Documentation Tools:"
-print_color $YELLOW "-----------------------"
+# Git Hooks & CI Tools
+print_color $YELLOW "🔗 Git Hooks & CI Tools:"
+print_color $YELLOW "------------------------"
 check_command "python3" "Python 3" "python3" "python3" "python3" "python" false
 check_command "pip3" "pip3" "python3" "python3-pip" "python3-pip" "python-pip" false
+# Check for pre-commit
+if command -v pre-commit &> /dev/null; then
+    version=$(pre-commit --version 2>&1 | head -n1)
+    print_color $GREEN "✅ pre-commit found: $version"
+else
+    print_color $YELLOW "⚠️  pre-commit NOT found (OPTIONAL - for Git hooks)"
+    if command -v pip3 &> /dev/null; then
+        print_color $CYAN "   Installation: pip3 install --user pre-commit"
+    elif command -v pip &> /dev/null; then
+        print_color $CYAN "   Installation: pip install --user pre-commit"
+    else
+        print_color $CYAN "   Installation: Install Python first, then: pip install pre-commit"
+    fi
+    WARNINGS=$((WARNINGS + 1))
+fi
 echo ""
 
-# GitHub CLI (optional but useful)
+# Additional Development Tools
 print_color $YELLOW "🔧 Additional Tools:"
 print_color $YELLOW "--------------------"
 check_command "gh" "GitHub CLI" "gh" "gh" "gh" "github-cli" false
+# Check for other useful tools
+check_command "watch" "watch (file monitoring)" "watch" "procps-ng" "procps-ng" "procps" false
+check_command "tree" "tree (directory viewer)" "tree" "tree" "tree" "tree" false
 echo ""
 
 # Check for Go modules
@@ -329,6 +356,24 @@ else
     print_color $RED "❌ go.mod not found"
     print_color $CYAN "   Ensure you're in the project root directory"
     MISSING_TOOLS=$((MISSING_TOOLS + 1))
+fi
+
+# Check for pre-commit hooks configuration
+if [ -f ".pre-commit-config.yaml" ]; then
+    print_color $GREEN "✅ pre-commit config found"
+
+    # Check if hooks are installed
+    if [ -f ".git/hooks/pre-commit" ] && grep -q "pre-commit" ".git/hooks/pre-commit" 2>/dev/null; then
+        print_color $GREEN "✅ pre-commit hooks installed"
+    else
+        print_color $YELLOW "⚠️  pre-commit hooks not installed"
+        if command -v pre-commit &> /dev/null; then
+            print_color $CYAN "   Run: pre-commit install"
+        else
+            print_color $CYAN "   Install pre-commit first, then run: pre-commit install"
+        fi
+        WARNINGS=$((WARNINGS + 1))
+    fi
 fi
 echo ""
 

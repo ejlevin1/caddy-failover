@@ -94,6 +94,122 @@ jobs:
             }
           fi
 
+      # Docker builds first (as requested)
+      - name: Set up Docker Buildx
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        if: steps.semantic.outputs.new_release_published == 'true'
+        id: docker_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/ejlevin1/caddy-failover
+          tags: |
+            type=semver,pattern={{version}},value=v${{ steps.semantic.outputs.new_release_version }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ steps.semantic.outputs.new_release_version }}
+            type=semver,pattern={{major}},value=v${{ steps.semantic.outputs.new_release_version }}
+            type=raw,value=latest
+
+      # Build builder stages separately for caching
+      - name: Build builder cache stages
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          target: builder
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          outputs: type=cacheonly
+
+      # Commented out -loaded builds as requested
+      # - name: Build builder-loaded cache stages
+      #   if: steps.semantic.outputs.new_release_published == 'true'
+      #   uses: docker/build-push-action@v5
+      #   with:
+      #     context: .
+      #     platforms: linux/amd64,linux/arm64
+      #     push: false
+      #     target: builder-loaded
+      #     cache-from: type=gha
+      #     cache-to: type=gha,mode=max
+      #     outputs: type=cacheonly
+
+      - name: Build and push standard Docker image
+        if: steps.semantic.outputs.new_release_published == 'true'
+        id: docker_build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: standard
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.semantic.outputs.new_release_version }}
+            GIT_TAG=v${{ steps.semantic.outputs.new_release_version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Commented out -loaded Docker image builds as requested
+      # - name: Extract Docker metadata for -loaded variant
+      #   if: steps.semantic.outputs.new_release_published == 'true'
+      #   id: docker_meta_loaded
+      #   uses: docker/metadata-action@v5
+      #   with:
+      #     images: ghcr.io/ejlevin1/caddy-failover
+      #     tags: |
+      #       type=semver,pattern={{version}}-loaded,value=v${{ steps.semantic.outputs.new_release_version }}
+      #       type=semver,pattern={{major}}.{{minor}}-loaded,value=v${{ steps.semantic.outputs.new_release_version }}
+      #       type=semver,pattern={{major}}-loaded,value=v${{ steps.semantic.outputs.new_release_version }}
+      #       type=raw,value=latest-loaded
+
+      # - name: Build and push -loaded Docker image
+      #   if: steps.semantic.outputs.new_release_published == 'true'
+      #   id: docker_build_loaded
+      #   uses: docker/build-push-action@v5
+      #   with:
+      #     context: .
+      #     platforms: linux/amd64,linux/arm64
+      #     push: true
+      #     target: loaded
+      #     tags: ${{ steps.docker_meta_loaded.outputs.tags }}
+      #     labels: ${{ steps.docker_meta_loaded.outputs.labels }}
+      #     build-args: |
+      #       VERSION=${{ steps.semantic.outputs.new_release_version }}
+      #       GIT_TAG=v${{ steps.semantic.outputs.new_release_version }}
+      #     cache-from: type=gha
+      #     cache-to: type=gha,mode=max
+
+      - name: Generate Docker image attestation (standard)
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ghcr.io/ejlevin1/caddy-failover
+          subject-digest: ${{ steps.docker_build.outputs.digest }}
+          push-to-registry: true
+
+      # Commented out -loaded attestation
+      # - name: Generate Docker image attestation (-loaded)
+      #   if: steps.semantic.outputs.new_release_published == 'true'
+      #   uses: actions/attest-build-provenance@v1
+      #   with:
+      #     subject-name: ghcr.io/ejlevin1/caddy-failover
+      #     subject-digest: ${{ steps.docker_build_loaded.outputs.digest }}
+      #     push-to-registry: true
+
+      # Now xcaddy builds (after Docker as requested)
       - name: Build Caddy with plugin
         if: steps.semantic.outputs.new_release_published == 'true'
         run: |
@@ -146,114 +262,3 @@ jobs:
             ./dist/*.tar.gz
             ./dist/*.zip
           token: ${{ steps.generate_token.outputs.token || secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        if: steps.semantic.outputs.new_release_published == 'true'
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        if: steps.semantic.outputs.new_release_published == 'true'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract Docker metadata
-        if: steps.semantic.outputs.new_release_published == 'true'
-        id: docker_meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/ejlevin1/caddy-failover
-          tags: |
-            type=semver,pattern={{version}},value=v${{ steps.semantic.outputs.new_release_version }}
-            type=semver,pattern={{major}}.{{minor}},value=v${{ steps.semantic.outputs.new_release_version }}
-            type=semver,pattern={{major}},value=v${{ steps.semantic.outputs.new_release_version }}
-            type=raw,value=latest
-
-      # Build builder stages separately for caching
-      - name: Build builder cache stages
-        if: steps.semantic.outputs.new_release_published == 'true'
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: false
-          target: builder
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          outputs: type=cacheonly
-
-      - name: Build builder-loaded cache stages
-        if: steps.semantic.outputs.new_release_published == 'true'
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: false
-          target: builder-loaded
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          outputs: type=cacheonly
-
-      - name: Build and push standard Docker image
-        if: steps.semantic.outputs.new_release_published == 'true'
-        id: docker_build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: standard
-          tags: ${{ steps.docker_meta.outputs.tags }}
-          labels: ${{ steps.docker_meta.outputs.labels }}
-          build-args: |
-            VERSION=${{ steps.semantic.outputs.new_release_version }}
-            GIT_TAG=v${{ steps.semantic.outputs.new_release_version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Extract Docker metadata for -loaded variant
-        if: steps.semantic.outputs.new_release_published == 'true'
-        id: docker_meta_loaded
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/ejlevin1/caddy-failover
-          tags: |
-            type=semver,pattern={{version}}-loaded,value=v${{ steps.semantic.outputs.new_release_version }}
-            type=semver,pattern={{major}}.{{minor}}-loaded,value=v${{ steps.semantic.outputs.new_release_version }}
-            type=semver,pattern={{major}}-loaded,value=v${{ steps.semantic.outputs.new_release_version }}
-            type=raw,value=latest-loaded
-
-      - name: Build and push -loaded Docker image
-        if: steps.semantic.outputs.new_release_published == 'true'
-        id: docker_build_loaded
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: loaded
-          tags: ${{ steps.docker_meta_loaded.outputs.tags }}
-          labels: ${{ steps.docker_meta_loaded.outputs.labels }}
-          build-args: |
-            VERSION=${{ steps.semantic.outputs.new_release_version }}
-            GIT_TAG=v${{ steps.semantic.outputs.new_release_version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Generate Docker image attestation (standard)
-        if: steps.semantic.outputs.new_release_published == 'true'
-        uses: actions/attest-build-provenance@v1
-        with:
-          subject-name: ghcr.io/ejlevin1/caddy-failover
-          subject-digest: ${{ steps.docker_build.outputs.digest }}
-          push-to-registry: true
-
-      - name: Generate Docker image attestation (-loaded)
-        if: steps.semantic.outputs.new_release_published == 'true'
-        uses: actions/attest-build-provenance@v1
-        with:
-          subject-name: ghcr.io/ejlevin1/caddy-failover
-          subject-digest: ${{ steps.docker_build_loaded.outputs.digest }}
-          push-to-registry: true

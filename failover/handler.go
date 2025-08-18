@@ -1,5 +1,5 @@
 // Package caddyfailover provides automatic failover capabilities for Caddy server
-package caddyfailover
+package failover
 
 import (
 	"context"
@@ -23,14 +23,14 @@ import (
 	"go.uber.org/zap"
 )
 
-func init() {
-	caddy.RegisterModule(&FailoverProxy{})
-	caddy.RegisterModule(&FailoverStatusHandler{})
-	httpcaddyfile.RegisterHandlerDirective("failover_proxy", parseFailoverProxy)
-	httpcaddyfile.RegisterHandlerDirective("failover_status", parseFailoverStatus)
+// ParseFailoverProxy parses the failover_proxy directive
+func ParseFailoverProxy(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	return parseFailoverProxy(h)
+}
 
-	// Register failover API specification
-	api_registrar.RegisterApiSpec("failover_api", getFailoverApiSpec)
+// ParseFailoverStatus parses the failover_status directive
+func ParseFailoverStatus(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	return parseFailoverStatus(h)
 }
 
 var (
@@ -378,10 +378,22 @@ func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// Cleanup stops health check goroutines
+// Cleanup stops health check goroutines and closes idle connections
 func (f *FailoverProxy) Cleanup() error {
 	close(f.shutdown)
 	f.wg.Wait()
+
+	// Close idle connections to prevent socket exhaustion
+	if f.httpClient != nil {
+		if transport, ok := f.httpClient.Transport.(*http.Transport); ok {
+			transport.CloseIdleConnections()
+		}
+	}
+	if f.httpsClient != nil {
+		if transport, ok := f.httpsClient.Transport.(*http.Transport); ok {
+			transport.CloseIdleConnections()
+		}
+	}
 
 	// Unregister from global registry
 	registrationPath := f.Path
@@ -667,7 +679,7 @@ func (f *FailoverProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		f.failureCache[upstreamURL] = time.Now()
 		f.mu.Unlock()
 
-		f.logger.Warn("upstream failed, trying next",
+		f.logger.Debug("upstream failed, trying next",
 			zap.String("url", upstreamURL),
 			zap.Error(err))
 		attemptedUpstreams++
@@ -1013,6 +1025,30 @@ func hashString(s string) string {
 
 // getFailoverApiSpec returns the failover API specification
 func getFailoverApiSpec() *api_registrar.CaddyModuleApiSpec {
+	return &api_registrar.CaddyModuleApiSpec{
+		ID:          "failover_api",
+		Title:       "Failover Status API",
+		Version:     "1.0",
+		Description: "API for monitoring and managing failover proxy status",
+		Endpoints: []api_registrar.CaddyModuleApiEndpoint{
+			{
+				Method:      "GET",
+				Path:        "/status",
+				Summary:     "Get failover proxy status",
+				Description: "Returns the current status of all registered failover proxies including their upstreams, health checks, and active states",
+				Responses: map[int]api_registrar.ResponseDef{
+					200: {
+						Description: "List of failover proxy statuses",
+						Body:        []PathStatus{},
+					},
+				},
+			},
+		},
+	}
+}
+
+// GetFailoverApiSpec returns the failover API specification
+func GetFailoverApiSpec() *api_registrar.CaddyModuleApiSpec {
 	return &api_registrar.CaddyModuleApiSpec{
 		ID:          "failover_api",
 		Title:       "Failover Status API",

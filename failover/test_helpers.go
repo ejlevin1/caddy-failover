@@ -1,4 +1,4 @@
-package caddyfailover
+package failover
 
 import (
 	"encoding/json"

@@ -231,7 +231,17 @@ run_unit_tests() {
     cmd="$cmd -short ./..."
 
     print_color $YELLOW "Command: $cmd"
-    eval $cmd
+    if [[ "$VERBOSE" != "-v" ]]; then
+        eval "$cmd" 2>/dev/null
+        local exit_code=$?
+    else
+        eval "$cmd"
+        local exit_code=$?
+    fi
+
+    if [[ $exit_code -ne 0 ]]; then
+        return $exit_code
+    fi
 
     if [[ "$COVERAGE" == "yes" ]]; then
         generate_coverage_report
@@ -266,7 +276,17 @@ run_integration_tests() {
     local cmd="go test $VERBOSE $RACE -run Integration ./..."
 
     print_color $YELLOW "Command: $cmd"
-    eval $cmd
+    if [[ "$VERBOSE" != "-v" ]]; then
+        eval "$cmd" 2>/dev/null
+        local exit_code=$?
+    else
+        eval "$cmd"
+        local exit_code=$?
+    fi
+
+    if [[ $exit_code -ne 0 ]]; then
+        return $exit_code
+    fi
 
     # Show the status endpoint output if verbose mode is enabled
     if [[ "$VERBOSE" == "-v" ]]; then
@@ -283,7 +303,17 @@ run_benchmark_tests() {
     local cmd="go test -bench=. -benchmem -run=^$ $VERBOSE ./..."
 
     print_color $YELLOW "Command: $cmd"
-    eval $cmd
+    if [[ "$VERBOSE" != "-v" ]]; then
+        eval "$cmd" 2>/dev/null
+        local exit_code=$?
+    else
+        eval "$cmd"
+        local exit_code=$?
+    fi
+
+    if [[ $exit_code -ne 0 ]]; then
+        return $exit_code
+    fi
 }
 
 # Function to run all tests
@@ -302,7 +332,17 @@ run_quick_tests() {
     local cmd="go test $VERBOSE $RACE -short ./..."
 
     print_color $YELLOW "Command: $cmd"
-    eval $cmd
+    if [[ "$VERBOSE" != "-v" ]]; then
+        eval "$cmd" 2>/dev/null
+        local exit_code=$?
+    else
+        eval "$cmd"
+        local exit_code=$?
+    fi
+
+    if [[ $exit_code -ne 0 ]]; then
+        return $exit_code
+    fi
 }
 
 

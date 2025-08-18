@@ -1,7 +1,8 @@
-package caddyfailover
+package failover
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"go.uber.org/zap"
 )
 
 // BenchmarkFailoverProxy benchmarks the failover proxy performance
@@ -28,12 +30,23 @@ func BenchmarkFailoverProxy(b *testing.B) {
 		ResponseTimeout: caddy.Duration(5 * time.Second),
 	}
 
-	// Provision the proxy
-	ctx := caddy.Context{}
-	if err := fp.Provision(ctx); err != nil {
-		b.Fatalf("Failed to provision: %v", err)
+	// Manually initialize without Provision to avoid debug logs
+	fp.logger = zap.NewNop()
+	fp.replacer = caddy.NewReplacer()
+	fp.failureCache = make(map[string]time.Time)
+	fp.healthStatus = make(map[string]bool)
+	fp.lastCheckTime = make(map[string]time.Time)
+	fp.responseTime = make(map[string]int64)
+	fp.shutdown = make(chan struct{})
+	fp.httpClient = &http.Client{
+		Timeout: time.Duration(fp.ResponseTimeout),
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout: time.Duration(fp.DialTimeout),
+			}).DialContext,
+		},
 	}
-	defer fp.Cleanup()
+	defer close(fp.shutdown)
 
 	// Create test request and response recorder
 	req := httptest.NewRequest("GET", "http://example.com/test", nil)
@@ -133,12 +146,23 @@ func BenchmarkFailoverWithMultipleUpstreams(b *testing.B) {
 		ResponseTimeout: caddy.Duration(200 * time.Millisecond),
 	}
 
-	// Provision the proxy
-	ctx := caddy.Context{}
-	if err := fp.Provision(ctx); err != nil {
-		b.Fatalf("Failed to provision: %v", err)
+	// Manually initialize without Provision to avoid debug logs
+	fp.logger = zap.NewNop()
+	fp.replacer = caddy.NewReplacer()
+	fp.failureCache = make(map[string]time.Time)
+	fp.healthStatus = make(map[string]bool)
+	fp.lastCheckTime = make(map[string]time.Time)
+	fp.responseTime = make(map[string]int64)
+	fp.shutdown = make(chan struct{})
+	fp.httpClient = &http.Client{
+		Timeout: time.Duration(fp.ResponseTimeout),
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout: time.Duration(fp.DialTimeout),
+			}).DialContext,
+		},
 	}
-	defer fp.Cleanup()
+	defer close(fp.shutdown)
 
 	req := httptest.NewRequest("GET", "http://example.com/test", nil)
 
@@ -182,12 +206,23 @@ func BenchmarkHealthCheck(b *testing.B) {
 		},
 	}
 
-	// Provision the proxy
-	ctx := caddy.Context{}
-	if err := fp.Provision(ctx); err != nil {
-		b.Fatalf("Failed to provision: %v", err)
+	// Manually initialize without Provision to avoid debug logs
+	fp.logger = zap.NewNop()
+	fp.replacer = caddy.NewReplacer()
+	fp.failureCache = make(map[string]time.Time)
+	fp.healthStatus = make(map[string]bool)
+	fp.lastCheckTime = make(map[string]time.Time)
+	fp.responseTime = make(map[string]int64)
+	fp.shutdown = make(chan struct{})
+	fp.httpClient = &http.Client{
+		Timeout: time.Duration(fp.ResponseTimeout),
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout: time.Duration(fp.DialTimeout),
+			}).DialContext,
+		},
 	}
-	defer fp.Cleanup()
+	defer close(fp.shutdown)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

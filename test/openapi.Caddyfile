@@ -1,0 +1,99 @@
+{
+    order failover_proxy before reverse_proxy
+    order failover_status before respond
+    order caddy_api_registrar before respond
+    admin 0.0.0.0:2019
+
+    # Global API registrar configuration
+    caddy_api_registrar {
+        failover_api {
+            path /caddy/failover
+            title "Caddy Failover Plugin API"
+            version "1.0.0"
+        }
+        caddy_api {
+            path /caddy-admin
+            title "Caddy Admin API"
+            version "2.0"
+        }
+    }
+}
+
+# HTTP server for OpenAPI documentation and testing
+:9080 {
+    # Health check endpoint
+    handle /health {
+        respond "OK" 200
+    }
+
+    # Swagger UI endpoints
+    handle /api/docs {
+        caddy_api_registrar swagger-ui
+    }
+
+    handle /api/docs/* {
+        caddy_api_registrar swagger-ui
+    }
+
+    # Redoc UI endpoint
+    handle /api/docs/redoc* {
+        caddy_api_registrar redoc
+    }
+
+    # OpenAPI 3.0 JSON endpoint
+    handle /api/docs/openapi.json {
+        caddy_api_registrar openapi-v3.0
+    }
+
+    # OpenAPI 3.1 JSON endpoint
+    handle /api/docs/openapi-3.1.json {
+        caddy_api_registrar openapi-v3.1
+    }
+
+    # Failover status endpoint (documented in OpenAPI)
+    handle /caddy/failover/status {
+        failover_status
+    }
+
+    # Test failover proxy endpoint
+    handle /api/* {
+        failover_proxy http://upstream1:80 http://upstream2:80 {
+            health_check http://upstream1:80 {
+                path /
+                interval 10s
+                timeout 2s
+            }
+            health_check http://upstream2:80 {
+                path /
+                interval 10s
+                timeout 2s
+            }
+            dial_timeout 5s
+            response_timeout 10s
+            fail_duration 30s
+        }
+    }
+
+    # Default response
+    handle {
+        respond "Caddy Failover OpenAPI Test Server" 200
+    }
+}
+
+# HTTPS server (optional, for testing HTTPS endpoints)
+https://localhost:9443 {
+    tls internal
+
+    # Same endpoints as HTTP for testing
+    handle /api/docs* {
+        caddy_api_registrar swagger-ui
+    }
+
+    handle /api/docs/redoc* {
+        caddy_api_registrar redoc
+    }
+
+    handle /caddy/failover/status {
+        failover_status
+    }
+}

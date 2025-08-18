@@ -9,6 +9,7 @@ set -e
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Default values
@@ -38,6 +39,7 @@ Commands:
     race        Run tests with race detector
     quick       Run quick tests (exclude integration)
     status      Test the failover status endpoint manually
+    openapi     Run OpenAPI specification tests
     help        Show this help message
 
 Options:
@@ -440,6 +442,27 @@ case $COMMAND in
         ;;
     status)
         test_status_endpoint
+        ;;
+    openapi)
+        print_color $BLUE "🔄 Running OpenAPI integration tests with Docker..."
+
+        # Run unit tests first for formatters
+        print_color $YELLOW "Running formatter unit tests..."
+        if go test -v ./api_registrar/formatters/... 2>&1; then
+            print_color $GREEN "✅ Formatter unit tests passed"
+        else
+            print_color $RED "❌ Formatter unit tests failed"
+            exit 1
+        fi
+
+        # Run Docker integration tests
+        print_color $YELLOW "Running Docker integration tests..."
+        if ./test/test-openapi-docker.sh; then
+            print_color $GREEN "✅ OpenAPI Docker integration tests passed"
+        else
+            print_color $RED "❌ OpenAPI Docker integration tests failed"
+            exit 1
+        fi
         ;;
     help)
         usage

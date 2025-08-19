@@ -1,3 +1,10 @@
+## [2.0.1](https://github.com/ejlevin1/caddy-failover/compare/v2.0.0...v2.0.1) (2025-08-19)
+
+
+### Bug Fixes
+
+* remove status_path directive and fix API registrar path duplication ([885e1db](https://github.com/ejlevin1/caddy-failover/commit/885e1dbf11bc62270cd3f4030a68ddb4d68337ad))
+
 # [2.0.0](https://github.com/ejlevin1/caddy-failover/compare/v1.12.1...v2.0.0) (2025-08-19)
 
 

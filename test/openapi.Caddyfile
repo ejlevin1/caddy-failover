@@ -2,21 +2,8 @@
     order failover_proxy before reverse_proxy
     order failover_status before respond
     order caddy_api_registrar before respond
+    order caddy_api_registrar_serve before respond
     admin 0.0.0.0:2019
-
-    # Global API registrar configuration
-    caddy_api_registrar {
-        failover_api {
-            path /caddy/failover
-            title "Caddy Failover Plugin API"
-            version "1.0.0"
-        }
-        caddy_api {
-            path /caddy-admin
-            title "Caddy Admin API"
-            version "2.0"
-        }
-    }
 }
 
 # HTTP server for OpenAPI documentation and testing
@@ -28,31 +15,59 @@
 
     # Swagger UI endpoints
     handle /api/docs {
-        caddy_api_registrar swagger-ui
+        caddy_api_registrar_serve swagger-ui {
+            spec_url /api/docs/openapi.json
+        }
     }
 
     handle /api/docs/* {
-        caddy_api_registrar swagger-ui
+        caddy_api_registrar_serve swagger-ui {
+            spec_url /api/docs/openapi.json
+        }
     }
 
     # Redoc UI endpoint
     handle /api/docs/redoc* {
-        caddy_api_registrar redoc
+        caddy_api_registrar_serve redoc {
+            spec_url /api/docs/openapi.json
+        }
     }
 
     # OpenAPI 3.0 JSON endpoint
     handle /api/docs/openapi.json {
-        caddy_api_registrar openapi-v3.0
+        caddy_api_registrar_serve openapi-v3.0
     }
 
     # OpenAPI 3.1 JSON endpoint
     handle /api/docs/openapi-3.1.json {
-        caddy_api_registrar openapi-v3.1
+        caddy_api_registrar_serve openapi-v3.1
     }
 
     # Failover status endpoint (documented in OpenAPI)
     handle /caddy/failover/status {
+        # Register the failover API at this path
+        caddy_api_registrar {
+            path /caddy/failover/status
+            failover_api {
+                title "Caddy Failover Plugin API"
+                version "1.0.0"
+            }
+        }
         failover_status
+    }
+
+    # Caddy admin API proxy (if needed)
+    handle /caddy-admin/* {
+        # Register the Caddy admin API at this path
+        caddy_api_registrar {
+            path /caddy-admin
+            caddy_api {
+                title "Caddy Admin API"
+                version "2.0"
+            }
+        }
+        uri strip_prefix /caddy-admin
+        reverse_proxy localhost:2019
     }
 
     # Test failover proxy endpoint
@@ -86,14 +101,26 @@ https://localhost:9443 {
 
     # Same endpoints as HTTP for testing
     handle /api/docs* {
-        caddy_api_registrar swagger-ui
+        caddy_api_registrar_serve swagger-ui {
+            spec_url /api/docs/openapi.json
+        }
     }
 
     handle /api/docs/redoc* {
-        caddy_api_registrar redoc
+        caddy_api_registrar_serve redoc {
+            spec_url /api/docs/openapi.json
+        }
     }
 
     handle /caddy/failover/status {
+        # Register the failover API at this path
+        caddy_api_registrar {
+            path /caddy/failover/status
+            failover_api {
+                title "Caddy Failover Plugin API"
+                version "1.0.0"
+            }
+        }
         failover_status
     }
 }

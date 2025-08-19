@@ -210,7 +210,7 @@ xcaddy build --with github.com/ejlevin1/caddy-failover
 
 ### Global Configuration
 
-The plugin requires global configuration to set directive ordering and API registrar settings:
+The plugin requires global configuration to set directive ordering:
 
 ```caddyfile
 {
@@ -218,26 +218,10 @@ The plugin requires global configuration to set directive ordering and API regis
     order failover_proxy before reverse_proxy
     order failover_status before respond
     order caddy_api_registrar before respond
+    order caddy_api_registrar_serve before respond
 
     # Optional: Admin API endpoint
     admin :2019
-
-    # Optional: API Registrar configuration for OpenAPI documentation
-    caddy_api_registrar {
-        # Register Caddy's admin API documentation
-        caddy_api {
-            path /caddy-admin
-            title "Caddy Admin API"
-            version "2.0"
-        }
-
-        # Register failover plugin API documentation
-        failover_api {
-            path /caddy/failover
-            title "Failover Plugin API"
-            version "1.0"
-        }
-    }
 
     # Optional: Enable debug logging
     # debug
@@ -271,8 +255,7 @@ The plugin requires global configuration to set directive ordering and API regis
             response_timeout 5s
             insecure_skip_verify  # For self-signed certs in dev
 
-            # Status tracking (required for status endpoint)
-            status_path /api/*
+            # Path is automatically detected from the handle block for status tracking
 
             # Health check for primary upstream
             health_check http://primary.local:3000 {
@@ -312,23 +295,36 @@ The plugin includes built-in API documentation generation with Swagger UI and Re
     order failover_proxy before reverse_proxy
     order failover_status before respond
     order caddy_api_registrar before respond
-
-    # Configure which APIs to document
-    caddy_api_registrar {
-        failover_api {
-            path /caddy/failover
-            title "Failover Plugin API"
-            version "1.0.0"
-        }
-        caddy_api {
-            path /caddy-admin
-            title "Caddy Admin API"
-            version "2.0"
-        }
-    }
+    order caddy_api_registrar_serve before respond
 }
 
 :443 {
+    # Register APIs at their actual paths
+    handle /caddy/failover/status {
+        # Register the failover API at this path
+        caddy_api_registrar {
+            path /caddy/failover/status
+            failover_api {
+                title "Failover Plugin API"
+                version "1.0.0"
+            }
+        }
+        failover_status
+    }
+
+    # Register admin API proxy if needed
+    handle /caddy-admin/* {
+        caddy_api_registrar {
+            path /caddy-admin
+            caddy_api {
+                title "Caddy Admin API"
+                version "2.0"
+            }
+        }
+        uri strip_prefix /caddy-admin
+        reverse_proxy localhost:2019
+    }
+
     # RECOMMENDED: Combined Swagger UI with redirect handling
     # This pattern handles both /api/docs and /api/docs/ correctly
     handle /api/docs* {
@@ -337,27 +333,30 @@ The plugin includes built-in API documentation generation with Swagger UI and Re
         redir @no_slash /api/docs/ 302
 
         # Serve Swagger UI for all paths under /api/docs/
-        caddy_api_registrar swagger-ui
+        caddy_api_registrar_serve swagger-ui {
+            spec_url /api/docs/openapi.json
+        }
     }
 
     # Redoc UI endpoint
     handle /api/docs/redoc* {
-        caddy_api_registrar redoc
+        caddy_api_registrar_serve redoc {
+            spec_url /api/docs/openapi.json
+        }
     }
 
     # Raw OpenAPI JSON endpoints
     handle /api/docs/openapi.json {
-        caddy_api_registrar openapi-v3.0
+        caddy_api_registrar_serve openapi-v3.0
     }
 
     handle /api/docs/openapi-3.1.json {
-        caddy_api_registrar openapi-v3.1
+        caddy_api_registrar_serve openapi-v3.1
     }
 
     # Your failover configurations...
     handle /api/* {
         failover_proxy http://localhost:3000 http://backup:3000 {
-            status_path /api/*
         }
     }
 }
@@ -373,24 +372,35 @@ Once configured, you can access:
 
 ### Best Practices for OpenAPI Configuration
 
-1. **Always use wildcards for UI endpoints**: This ensures proper handling of sub-resources:
+1. **Register APIs at their actual paths**: Use `caddy_api_registrar` where the API is actually mounted to prevent path mismatches:
+   ```caddyfile
+   handle /caddy/failover/status {
+       caddy_api_registrar {
+           path /caddy/failover/status  # Matches the actual endpoint
+           failover_api { ... }
+       }
+       failover_status
+   }
+   ```
+
+2. **Always use wildcards for UI endpoints**: This ensures proper handling of sub-resources:
    ```caddyfile
    handle /api/docs* {  # Good - handles all paths under /api/docs
    ```
 
-2. **Include redirect handling**: Swagger UI requires a trailing slash to load properly:
+3. **Include redirect handling**: Swagger UI requires a trailing slash to load properly:
    ```caddyfile
    @no_slash path /api/docs
    redir @no_slash /api/docs/ 302
    ```
 
-3. **Keep UI and JSON endpoints together**: Place them at the same path level for consistency:
+4. **Keep UI and JSON endpoints together**: Place them at the same path level for consistency:
    ```caddyfile
    /api/docs/           # Swagger UI
    /api/docs/openapi.json  # OpenAPI spec
    ```
 
-4. **Test your endpoints**: Use the included test script:
+5. **Test your endpoints**: Use the included test script:
    ```bash
    ./test/test-openapi-endpoints.sh
    ```
@@ -417,8 +427,6 @@ The plugin provides a real-time status endpoint to monitor all configured failov
     # Failover proxies with status tracking
     handle /api/* {
         failover_proxy http://api1.local http://api2.local {
-            # IMPORTANT: status_path enables tracking for this proxy
-            status_path /api/*
             fail_duration 5s
 
             health_check http://api1.local {
@@ -430,7 +438,6 @@ The plugin provides a real-time status endpoint to monitor all configured failov
 
     handle /auth/* {
         failover_proxy http://auth1.local http://auth2.local {
-            status_path /auth/*
             fail_duration 5s
         }
     }
@@ -536,23 +543,10 @@ Here's a comprehensive example showing all features:
     order failover_proxy before reverse_proxy
     order failover_status before respond
     order caddy_api_registrar before respond
+    order caddy_api_registrar_serve before respond
 
     # Admin API
     admin :2019
-
-    # API documentation configuration
-    caddy_api_registrar {
-        failover_api {
-            path /caddy/failover
-            title "Failover Plugin API"
-            version "1.0.0"
-        }
-        caddy_api {
-            path /caddy-admin
-            title "Caddy Admin API"
-            version "2.0"
-        }
-    }
 
     # Optional: Enable debug logging
     # debug
@@ -562,19 +556,31 @@ Here's a comprehensive example showing all features:
 https://localhost:443 {
     # API Documentation endpoints
     handle /api/docs* {
-        caddy_api_registrar swagger-ui
+        caddy_api_registrar_serve swagger-ui {
+            spec_url /api/docs/openapi.json
+        }
     }
 
     handle /api/docs/redoc* {
-        caddy_api_registrar redoc
+        caddy_api_registrar_serve redoc {
+            spec_url /api/docs/openapi.json
+        }
     }
 
     handle /api/docs/openapi.json {
-        caddy_api_registrar openapi-v3.0
+        caddy_api_registrar_serve openapi-v3.0
     }
 
-    # Status monitoring endpoint
+    # Status monitoring endpoint with API registration
     handle /admin/failover/status {
+        # Register the failover API at this path
+        caddy_api_registrar {
+            path /admin/failover/status
+            failover_api {
+                title "Failover Plugin API"
+                version "1.0.0"
+            }
+        }
         failover_status
     }
 
@@ -593,7 +599,6 @@ https://localhost:443 {
             response_timeout 10s
 
             # Enable status tracking
-            status_path /api/*
 
             # Skip cert verification for dev
             insecure_skip_verify
@@ -631,7 +636,6 @@ https://localhost:443 {
     # Authentication service with failover
     handle /auth/* {
         failover_proxy http://auth1.local:8080 http://auth2.local:8080 {
-            status_path /auth/*
             fail_duration 3s
 
             header_up http://auth1.local:8080 X-Service auth-primary
@@ -669,7 +673,6 @@ http://localhost:80 {
 | `dial_timeout` | Connection timeout | `2s` |
 | `response_timeout` | Response timeout | `5s` |
 | `insecure_skip_verify` | Skip TLS certificate verification | `false` |
-| `status_path` | Path identifier for status reporting | (auto-generated) |
 | `header_up <upstream> <name> <value>` | Set upstream-specific headers | - |
 | `health_check <upstream> { ... }` | Configure health checks | - |
 
@@ -695,7 +698,26 @@ health_check <upstream_url> {
 
 **Important:** Each `health_check` directive must specify the upstream URL it applies to.
 
-### API Registrar Formats
+### API Registrar Directives
+
+#### caddy_api_registrar
+
+Registers API specifications at specific paths. This is a pass-through handler that doesn't serve content but registers metadata for API documentation.
+
+```caddyfile
+caddy_api_registrar {
+    path <path>  # Required: The path where this API is mounted
+    <api_id> {
+        title <title>
+        version <version>
+        description <description>
+    }
+}
+```
+
+#### caddy_api_registrar_serve
+
+Serves API documentation in various formats:
 
 | Format | Description |
 |--------|-------------|
@@ -703,6 +725,13 @@ health_check <upstream_url> {
 | `redoc` | Clean Redoc documentation interface |
 | `openapi-v3.0` | OpenAPI 3.0 JSON specification |
 | `openapi-v3.1` | OpenAPI 3.1 JSON specification |
+
+```caddyfile
+caddy_api_registrar_serve <format> {
+    spec_url <url>     # For UI formats: URL to the OpenAPI spec
+    server_url <url>   # Optional: Override server URL in spec
+}
+```
 
 ## Docker Images
 
@@ -802,7 +831,6 @@ Route to local IDE first, fall back to Docker, then production:
 :443 {
     handle /api/* {
         failover_proxy http://localhost:5000 http://docker:5000 https://api.prod.com {
-            status_path /api/*
             fail_duration 2s
 
             header_up http://localhost:5000 X-Environment local-ide
@@ -820,7 +848,6 @@ Route to local IDE first, fall back to Docker, then production:
     # User service
     handle /user/* {
         failover_proxy http://user1:8080 http://user2:8080 {
-            status_path /user/*
 
             health_check http://user1:8080 {
                 path /actuator/health
@@ -837,7 +864,6 @@ Route to local IDE first, fall back to Docker, then production:
     # Order service
     handle /order/* {
         failover_proxy http://order1:8081 http://order2:8081 {
-            status_path /order/*
 
             health_check http://order1:8081 {
                 path /health/live
@@ -854,7 +880,6 @@ Route to local IDE first, fall back to Docker, then production:
 :443 {
     handle /api/* {
         failover_proxy https://us-east.api.com https://us-west.api.com https://eu.api.com {
-            status_path /api/*
             fail_duration 10s
             response_timeout 3s
 
@@ -903,7 +928,7 @@ caddy run --config Caddyfile --debug
    - Use `route` instead of `handle` to avoid ordering issues
 
 2. **Status endpoint returns empty array**
-   - Solution: Add `status_path` to your failover_proxy configurations
+   - Solution: Ensure your failover_proxy is inside a handle block with a path matcher
 
 3. **Swagger UI not loading or blank page**
    - Common causes:

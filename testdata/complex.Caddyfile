@@ -10,7 +10,6 @@
     handle /auth/* {
         failover_proxy http://auth-primary.local:5051 http://auth-secondary.local:5052 {
             fail_duration 5s
-            status_path /auth/*
 
             health_check http://auth-primary.local:5051 {
                 path /health
@@ -35,7 +34,6 @@
     handle /admin/* {
         failover_proxy http://admin.local:5041 https://admin-backup.local:5042 {
             fail_duration 10s
-            status_path /admin/*
             insecure_skip_verify
 
             health_check http://admin.local:5041 {
@@ -67,7 +65,6 @@
     handle /gateway/* {
         failover_proxy http://gateway1.local:5021 http://gateway2.local:5022 http://gateway3.local:5023 {
             fail_duration 2s
-            status_path /gateway/*
 
             health_check http://gateway1.local:5021 {
                 path /gateway/health/ready

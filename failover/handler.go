@@ -237,10 +237,7 @@ type FailoverProxy struct {
 	// ResponseTimeout is the timeout for receiving response (default 5s)
 	ResponseTimeout caddy.Duration `json:"response_timeout,omitempty"`
 
-	// Path is the route path this proxy handles (for status reporting)
-	Path string `json:"path,omitempty"`
-
-	// HandlePath is the actual handle block path (e.g., /auth/*)
+	// HandlePath is the handle block path (e.g., /auth/*) - automatically detected
 	HandlePath string `json:"handle_path,omitempty"`
 
 	logger         *zap.Logger
@@ -276,12 +273,8 @@ func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 	f.activeUpstream = nil
 	f.shutdown = make(chan struct{})
 
-	// Register with global registry
-	// Use Path if explicitly set, otherwise use HandlePath
-	registrationPath := f.Path
-	if registrationPath == "" && f.HandlePath != "" {
-		registrationPath = f.HandlePath
-	}
+	// Register with global registry using the handle path
+	registrationPath := f.HandlePath
 
 	// If still no path, generate one based on the upstreams for status tracking
 	// This ensures the status endpoint always shows something
@@ -440,10 +433,7 @@ func (f *FailoverProxy) Cleanup() error {
 	}
 
 	// Unregister from global registry
-	registrationPath := f.Path
-	if registrationPath == "" && f.HandlePath != "" {
-		registrationPath = f.HandlePath
-	}
+	registrationPath := f.HandlePath
 	if registrationPath != "" {
 		proxyRegistry.Unregister(registrationPath, f)
 	}
@@ -708,7 +698,7 @@ func (f *FailoverProxy) checkActiveUpstreamChange() {
 		}
 
 		// User-friendly log at appropriate level
-		path := f.Path
+		path := f.HandlePath
 		if path == "" {
 			path = "/"
 		}
@@ -982,8 +972,6 @@ func parseFailoverProxy(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, er
 					for _, matcher := range matcherSet {
 						if pathMatcher, ok := matcher.(caddyhttp.MatchPath); ok && len(pathMatcher) > 0 {
 							f.HandlePath = string(pathMatcher[0])
-							// Also set Path as default if not explicitly overridden later
-							f.Path = f.HandlePath
 							break
 						}
 					}
@@ -1034,14 +1022,6 @@ func parseFailoverProxy(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, er
 
 			case "insecure_skip_verify":
 				f.InsecureSkipVerify = true
-
-			case "status_path":
-				// Allow manual configuration of the path for status reporting
-				// This overrides the registration key but preserves HandlePath for display
-				if !h.NextArg() {
-					return nil, h.ArgErr()
-				}
-				f.Path = h.Val()
 
 			case "header_up":
 				// Format: header_up <upstream_url> <header_name> <header_value>
@@ -1236,7 +1216,7 @@ func GetFailoverApiSpec() *api_registrar.CaddyModuleApiSpec {
 		Endpoints: []api_registrar.CaddyModuleApiEndpoint{
 			{
 				Method:      "GET",
-				Path:        "/status",
+				Path:        "",
 				Summary:     "Get failover proxy status",
 				Description: "Returns the current status of all registered failover proxies including their upstreams, health checks, and active states",
 				Responses: map[int]api_registrar.ResponseDef{

@@ -18,17 +18,18 @@ This document describes the design and implementation plan for adding API docume
 
 ```
 caddy-failover/
-├── api_registrar/              # API Registrar module (future-extractable)
-│   ├── handler.go              # Main API registrar handler (caddy_api_registrar directive)
-│   ├── registry.go             # Global registry for API specs
-│   ├── types.go                # API definition types (format-agnostic)
-│   ├── caddy_api.go            # Caddy Admin API definitions
-│   ├── formatters/             # Output format generators
-│   │   ├── openapi_v3.go      # OpenAPI 3.0 formatter
-│   │   ├── openapi_v3_1.go    # OpenAPI 3.1 formatter
-│   │   └── formatter.go        # Formatter interface
-│   └── generator.go            # Core spec generation logic
-└── failover.go                 # Modified to register failover API
+├── api_registrar/                  # API Registrar module (future-extractable)
+│   ├── registration_handler.go     # API registration handler (caddy_api_registrar directive)
+│   ├── serving_handler.go          # API serving handler (caddy_api_registrar_serve directive)
+│   ├── registry.go                 # Global registry for API specs
+│   ├── types.go                    # API definition types (format-agnostic)
+│   ├── caddy_api.go                # Caddy Admin API definitions
+│   ├── formatters/                 # Output format generators
+│   │   ├── openapi_v3.go          # OpenAPI 3.0 formatter
+│   │   ├── openapi_v3_1.go        # OpenAPI 3.1 formatter
+│   │   └── formatter.go            # Formatter interface
+│   └── generator.go                # Core spec generation logic
+└── failover.go                     # Modified to register failover API
 ```
 
 ### Core Components
@@ -149,47 +150,88 @@ func getCaddyAdminApiSpec() *CaddyModuleApiSpec {
 }
 ```
 
-#### 4. API Registrar Handler (`api_registrar/handler.go`)
+#### 4. API Registration Handler (`api_registrar/registration_handler.go`)
+
+A pass-through handler that registers API specifications at specific paths:
+
+```go
+type ApiRegistrationHandler struct {
+    Path string                           `json:"path,omitempty"`
+    APIs map[string]*ApiRegistrationConfig `json:"apis,omitempty"`
+}
+
+func (h *ApiRegistrationHandler) CaddyModule() caddy.ModuleInfo {
+    return caddy.ModuleInfo{
+        ID:  "http.handlers.caddy_api_registrar",
+        New: func() caddy.Module { return new(ApiRegistrationHandler) },
+    }
+}
+
+func (h *ApiRegistrationHandler) Provision(ctx caddy.Context) error {
+    if h.Path == "" {
+        return fmt.Errorf("path is required for API registration")
+    }
+
+    // Register each API with its path
+    for apiID, config := range h.APIs {
+        apiConfig := &ApiConfig{
+            Path:    h.Path,
+            Enabled: true,
+            Title:   config.Title,
+            Version: config.Version,
+        }
+        if err := RegisterApiPath(apiID, apiConfig); err != nil {
+            return err
+        }
+    }
+    return nil
+}
+
+// Pass-through handler - registers but doesn't serve
+func (h *ApiRegistrationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+    return next.ServeHTTP(w, r)
+}
+```
+
+#### 5. API Serving Handler (`api_registrar/serving_handler.go`)
 
 The HTTP handler that serves the generated API specification in the requested format:
 
 ```go
-type ApiRegistrarHandler struct {
-    Format string `json:"format,omitempty"` // "openapi-v3.0", "openapi-v3.1", etc.
+type ApiServingHandler struct {
+    Format    string `json:"format,omitempty"`     // "openapi-v3.0", "swagger-ui", etc.
+    SpecURL   string `json:"spec_url,omitempty"`   // For UI formatters
+    ServerURL string `json:"server_url,omitempty"` // Optional server URL override
 }
 
-func (h *ApiRegistrarHandler) CaddyModule() caddy.ModuleInfo {
+func (h *ApiServingHandler) CaddyModule() caddy.ModuleInfo {
     return caddy.ModuleInfo{
-        ID:  "http.handlers.caddy_api_registrar",
-        New: func() caddy.Module { return new(ApiRegistrarHandler) },
+        ID:  "http.handlers.caddy_api_registrar_serve",
+        New: func() caddy.Module { return new(ApiServingHandler) },
     }
 }
 
-func (h *ApiRegistrarHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-    // Get the appropriate formatter based on the format
+func (h *ApiServingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
     formatter := getFormatter(h.Format)
     if formatter == nil {
         http.Error(w, "Unsupported format", http.StatusBadRequest)
         return nil
     }
 
-    // Generate the spec using the formatter
+    // For UI formatters, set spec URL
+    if uiFormatter, ok := formatter.(UIFormatter); ok {
+        uiFormatter.SetSpecURL(h.SpecURL)
+    }
+
+    // Generate and serve the spec
     spec := h.generateApiSpec(formatter)
     w.Header().Set("Content-Type", formatter.ContentType())
     formatter.Write(w, spec)
     return nil
 }
-
-func (h *ApiRegistrarHandler) generateApiSpec(formatter Formatter) interface{} {
-    // 1. Iterate through registry.configs to find enabled APIs
-    // 2. For each enabled API, get spec from registry.specs
-    // 3. Merge endpoints with configured base paths
-    // 4. Use formatter to convert to desired output format
-    return formatter.Format(registry.specs, registry.configs)
-}
 ```
 
-#### 5. Formatter Interface (`api_registrar/formatters/formatter.go`)
+#### 6. Formatter Interface (`api_registrar/formatters/formatter.go`)
 
 Interface for different output format generators:
 
@@ -208,7 +250,7 @@ type Formatter interface {
 }
 ```
 
-#### 6. OpenAPI Formatter (`api_registrar/formatters/openapi_v3.go`)
+#### 7. OpenAPI Formatter (`api_registrar/formatters/openapi_v3.go`)
 
 OpenAPI 3.0 specific formatter implementation:
 
@@ -288,51 +330,55 @@ func getFailoverApiSpec() *api_registrar.CaddyModuleApiSpec {
 }
 ```
 
-### 2. Caddyfile Global Configuration
+### 2. Caddyfile Configuration
 
-Users configure which APIs to expose and at what paths:
+The new two-directive system separates registration from serving:
+
+#### Registration (at the actual API path):
 
 ```caddyfile
-{
+handle /caddy/failover/status {
+    # Register the API at this exact path
     caddy_api_registrar {
-        caddy_api {
-            path /caddy-admin
-        }
+        path /caddy/failover/status
         failover_api {
-            path /caddy/failover
+            title "Failover Plugin API"
+            version "1.0.0"
         }
     }
+    failover_status  # The actual handler
 }
 ```
 
-This configuration tells the system:
-- Include Caddy Admin API in OpenAPI spec, with base path `/caddy-admin`
-- Include Failover API in OpenAPI spec, with base path `/caddy/failover`
+This ensures the API is registered at the exact path where it's served, preventing path mismatches.
 
-### 3. Caddyfile Handler Configuration
+### 3. Caddyfile Serving Configuration
 
-Users add the API documentation endpoint to serve the specification:
+Users add documentation endpoints using the serving directive:
 
 ```caddyfile
 # Serve OpenAPI 3.0 format
-handle /openapi.json {
-    caddy_api_registrar {
-        format "openapi-v3.0"
+handle /api/docs/openapi.json {
+    caddy_api_registrar_serve openapi-v3.0
+}
+
+# Serve Swagger UI
+handle /api/docs* {
+    caddy_api_registrar_serve swagger-ui {
+        spec_url /api/docs/openapi.json
     }
 }
 
-# Or serve OpenAPI 3.1 format
-handle /api/v1/docs {
-    caddy_api_registrar {
-        format "openapi-v3.1"
+# Serve Redoc UI
+handle /api/docs/redoc* {
+    caddy_api_registrar_serve redoc {
+        spec_url /api/docs/openapi.json
     }
 }
 
 # Future: Could support other formats
 handle /graphql/schema {
-    caddy_api_registrar {
-        format "graphql-sdl"
-    }
+    caddy_api_registrar_serve graphql-sdl
 }
 ```
 
@@ -565,13 +611,14 @@ We chose not to support loading external schema files in the Caddyfile because:
 3. Keeps the configuration simpler and more maintainable
 4. Ensures documentation stays in sync with implementation
 
-### Why Global Configuration?
+### Why Two-Directive System?
 
-The global `caddy_api_registrar` block allows:
-1. Centralized control over which APIs are exposed
-2. Flexible path configuration independent of module implementation
-3. Clear separation between API implementation and documentation concerns
-4. Easy management of multiple API versions and endpoints
+The separation of `caddy_api_registrar` (registration) and `caddy_api_registrar_serve` (serving) provides:
+1. **Path accuracy**: APIs are registered exactly where they're mounted, preventing documentation mismatches
+2. **Clear separation**: Registration happens with the API handler, serving happens at documentation endpoints
+3. **Flexibility**: Multiple documentation endpoints can serve the same registered APIs
+4. **Pass-through behavior**: Registration doesn't interfere with the actual API handler
+5. **Better maintainability**: Changes to API paths automatically update documentation
 
 ### Why Native Go Structs?
 

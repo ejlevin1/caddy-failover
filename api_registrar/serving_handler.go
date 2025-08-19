@@ -5,36 +5,36 @@ import (
 	"net/http"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/ejlevin1/caddy-failover/api_registrar/formatters"
 )
 
 func init() {
-	caddy.RegisterModule(&ApiRegistrarHandler{})
-	httpcaddyfile.RegisterHandlerDirective("caddy_api_registrar", parseApiRegistrar)
-	httpcaddyfile.RegisterGlobalOption("caddy_api_registrar", parseGlobalApiRegistrar)
+	caddy.RegisterModule(&ApiServingHandler{})
+	httpcaddyfile.RegisterHandlerDirective("caddy_api_registrar_serve", parseApiServing)
 }
 
-// ApiRegistrarHandler serves API documentation in various formats
-type ApiRegistrarHandler struct {
+// ApiServingHandler serves API documentation in various formats
+type ApiServingHandler struct {
 	// Format specifies the output format (e.g., "openapi-v3.0", "openapi-v3.1", "swagger-ui", "redoc")
 	Format string `json:"format,omitempty"`
 	// SpecURL is the URL to the OpenAPI spec (for UI formatters, optional)
 	SpecURL string `json:"spec_url,omitempty"`
+	// ServerURL is the base URL for the API server (optional, defaults to dynamic detection)
+	ServerURL string `json:"server_url,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information
-func (*ApiRegistrarHandler) CaddyModule() caddy.ModuleInfo {
+func (*ApiServingHandler) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.handlers.caddy_api_registrar",
-		New: func() caddy.Module { return new(ApiRegistrarHandler) },
+		ID:  "http.handlers.caddy_api_registrar_serve",
+		New: func() caddy.Module { return new(ApiServingHandler) },
 	}
 }
 
 // Provision sets up the handler
-func (h *ApiRegistrarHandler) Provision(ctx caddy.Context) error {
+func (h *ApiServingHandler) Provision(ctx caddy.Context) error {
 	// Set default format if not specified
 	if h.Format == "" {
 		h.Format = "openapi-v3.0"
@@ -43,7 +43,7 @@ func (h *ApiRegistrarHandler) Provision(ctx caddy.Context) error {
 }
 
 // ServeHTTP handles the HTTP request and serves the API documentation
-func (h *ApiRegistrarHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+func (h *ApiServingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	// Only serve on GET requests
 	if r.Method != http.MethodGet {
 		return next.ServeHTTP(w, r)
@@ -91,6 +91,33 @@ func (h *ApiRegistrarHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, 
 		formatter = formatters.GetFormatterWithContext(h.Format, specURL)
 	default:
 		formatter = formatters.GetFormatter(h.Format)
+
+		// Determine server URL - use configured value or detect dynamically
+		serverURL := h.ServerURL
+		if serverURL == "" {
+			// Build the server URL from the request
+			scheme := "http"
+			if r.TLS != nil {
+				scheme = "https"
+			}
+			// Check X-Forwarded-Proto header (for proxied requests)
+			if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+				scheme = proto
+			}
+			serverURL = fmt.Sprintf("%s://%s", scheme, r.Host)
+		}
+
+		// Set server URL for OpenAPI formatters
+		switch h.Format {
+		case "openapi-v3.0", "openapi-3.0", "openapi":
+			if openapiFormatter, ok := formatter.(*formatters.OpenAPIv3Formatter); ok {
+				openapiFormatter.ServerURL = serverURL
+			}
+		case "openapi-v3.1", "openapi-3.1":
+			if openapiFormatter, ok := formatter.(*formatters.OpenAPIv31Formatter); ok {
+				openapiFormatter.ServerURL = serverURL
+			}
+		}
 	}
 
 	if formatter == nil {
@@ -100,10 +127,16 @@ func (h *ApiRegistrarHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, 
 
 	// Get specs and configs from registry
 	specs := GetSpecs()
-	configs := GetConfigs()
+	configs := GetRegisteredApiPaths()
+
+	// Convert to formatters.ApiConfig map format
+	formatterConfigs := make(map[string]*formatters.ApiConfig)
+	for k, v := range configs {
+		formatterConfigs[k] = v
+	}
 
 	// Generate the API documentation
-	doc, err := formatter.Format(specs, configs)
+	doc, err := formatter.Format(specs, formatterConfigs)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error generating documentation: %v", err), http.StatusInternalServerError)
 		return nil
@@ -121,36 +154,38 @@ func (h *ApiRegistrarHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, 
 	return nil
 }
 
-// parseApiRegistrar parses the caddy_api_registrar directive in handle blocks
-func parseApiRegistrar(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	handler := &ApiRegistrarHandler{}
+// parseApiServing parses the caddy_api_registrar_serve directive
+func parseApiServing(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	handler := &ApiServingHandler{}
 
 	// Parse the directive
 	for h.Next() {
-		// Check for format argument (optional)
+		// Check for format argument (required)
+		if !h.NextArg() {
+			return nil, h.Err("caddy_api_registrar_serve requires a format argument")
+		}
+		handler.Format = h.Val()
+
 		if h.NextArg() {
-			handler.Format = h.Val()
-			if h.NextArg() {
-				return nil, h.ArgErr()
-			}
+			return nil, h.ArgErr()
 		}
 
 		// Parse block for additional options
 		for h.NextBlock(0) {
 			switch h.Val() {
-			case "format":
-				if !h.NextArg() {
-					return nil, h.ArgErr()
-				}
-				handler.Format = h.Val()
-				if h.NextArg() {
-					return nil, h.ArgErr()
-				}
 			case "spec_url":
 				if !h.NextArg() {
 					return nil, h.ArgErr()
 				}
 				handler.SpecURL = h.Val()
+				if h.NextArg() {
+					return nil, h.ArgErr()
+				}
+			case "server_url":
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				handler.ServerURL = h.Val()
 				if h.NextArg() {
 					return nil, h.ArgErr()
 				}
@@ -163,72 +198,9 @@ func parseApiRegistrar(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 	return handler, nil
 }
 
-// parseGlobalApiRegistrar parses the global caddy_api_registrar configuration
-func parseGlobalApiRegistrar(d *caddyfile.Dispenser, _ interface{}) (interface{}, error) {
-	// This parses the global configuration block:
-	// {
-	//     caddy_api_registrar {
-	//         caddy_api {
-	//             path /caddy-admin
-	//         }
-	//         failover_api {
-	//             path /caddy/failover
-	//         }
-	//     }
-	// }
-
-	for d.Next() {
-		// Parse each API configuration in the block
-		for d.NextBlock(0) {
-			apiID := d.Val()
-			config := &ApiConfig{
-				Enabled: true,
-			}
-
-			// Parse API-specific configuration
-			for d.NextBlock(1) {
-				switch d.Val() {
-				case "path":
-					if !d.NextArg() {
-						return nil, d.ArgErr()
-					}
-					config.Path = d.Val()
-					if d.NextArg() {
-						return nil, d.ArgErr()
-					}
-				case "title":
-					if !d.NextArg() {
-						return nil, d.ArgErr()
-					}
-					config.Title = d.Val()
-					if d.NextArg() {
-						return nil, d.ArgErr()
-					}
-				case "version":
-					if !d.NextArg() {
-						return nil, d.ArgErr()
-					}
-					config.Version = d.Val()
-					if d.NextArg() {
-						return nil, d.ArgErr()
-					}
-				default:
-					return nil, d.Errf("unknown API configuration: %s", d.Val())
-				}
-			}
-
-			// Register the configuration
-			ConfigureApi(apiID, config)
-		}
-	}
-
-	// Return a non-nil value to indicate successful parsing
-	return struct{}{}, nil
-}
-
 // Interface guards
 var (
-	_ caddy.Module                = (*ApiRegistrarHandler)(nil)
-	_ caddy.Provisioner           = (*ApiRegistrarHandler)(nil)
-	_ caddyhttp.MiddlewareHandler = (*ApiRegistrarHandler)(nil)
+	_ caddy.Module                = (*ApiServingHandler)(nil)
+	_ caddy.Provisioner           = (*ApiServingHandler)(nil)
+	_ caddyhttp.MiddlewareHandler = (*ApiServingHandler)(nil)
 )

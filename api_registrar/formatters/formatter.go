@@ -84,8 +84,8 @@ func GetFormatter(format string) Formatter {
 	case "redoc", "redoc-ui":
 		return &RedocUIFormatter{}
 	default:
-		// Default to OpenAPI 3.0
-		return &OpenAPIv3Formatter{}
+		// Return nil for unknown formats
+		return nil
 	}
 }
 

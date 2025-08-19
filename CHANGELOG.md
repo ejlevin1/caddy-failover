@@ -1,3 +1,47 @@
+# [2.0.0](https://github.com/ejlevin1/caddy-failover/compare/v1.12.1...v2.0.0) (2025-08-19)
+
+
+### Bug Fixes
+
+* update test/openapi.Caddyfile to use new two-directive syntax ([6611ff7](https://github.com/ejlevin1/caddy-failover/commit/6611ff7fa1c3542310fd2a74cfc4f61a79c3e265))
+
+
+### Features
+
+* implement two-directive API registration system to prevent path mismatches ([a8bdb18](https://github.com/ejlevin1/caddy-failover/commit/a8bdb1861f3eb5bf74cdf4538297e192347a35dd))
+
+
+### BREAKING CHANGES
+
+* Split single caddy_api_registrar directive into two separate directives
+
+- caddy_api_registrar: Registration directive (pass-through) that registers APIs at their actual paths
+- caddy_api_registrar_serve: Serving directive that serves OpenAPI specs and documentation UIs
+
+Changes:
+- Split handler.go into registration_handler.go and serving_handler.go for cleaner separation
+- Added explicit path requirement in registration directive to prevent mismatches
+- Updated registry to track API paths separately from global configs
+- Fixed GetFormatter to return nil for unknown formats instead of defaulting
+- Added comprehensive test coverage for both new handlers
+- Updated OpenAPI formatter to support configurable server URLs
+
+Benefits:
+- Eliminates path mismatches between documentation and actual endpoints
+- Clearer separation of concerns between registration and serving
+- APIs are registered exactly where they're mounted in handle directives
+- Better validation and error handling
+
+Testing:
+- All existing tests pass with no regressions
+- New handlers have 85%+ test coverage
+- Manual testing confirms OpenAPI spec correctly shows /caddy/failover/status
+- Swagger UI successfully calls endpoints at correct paths
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+
 ## [1.12.1](https://github.com/ejlevin1/caddy-failover/compare/v1.12.0...v1.12.1) (2025-08-18)
 
 

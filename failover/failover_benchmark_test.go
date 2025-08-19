@@ -87,7 +87,6 @@ func BenchmarkProxyRegistryRegister(b *testing.B) {
 				proxy := &FailoverProxy{
 					Upstreams:  []string{fmt.Sprintf("http://localhost:%d", 5000+i)},
 					HandlePath: path,
-					Path:       path,
 				}
 				registry.Register(path, proxy)
 			}
@@ -108,7 +107,6 @@ func BenchmarkProxyRegistryGetStatus(b *testing.B) {
 		proxy := &FailoverProxy{
 			Upstreams:  []string{fmt.Sprintf("http://localhost:%d", 5000+i)},
 			HandlePath: path,
-			Path:       path,
 		}
 		registry.Register(path, proxy)
 	}

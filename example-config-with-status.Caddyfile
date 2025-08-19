@@ -1,4 +1,4 @@
-# Caddy Configuration with Custom Failover Plugin - Fixed with status_path
+# Caddy Configuration with Custom Failover Plugin
 # Global admin API configuration
 {
     admin :2019
@@ -34,8 +34,6 @@ https://localhost:9443 {
             response_timeout 5s
             insecure_skip_verify
 
-            # IMPORTANT: Add status_path for status tracking
-            status_path /admin/*
 
             # Health checks for primary (local IDE)
             health_check http://host.docker.internal:5041 {
@@ -83,8 +81,6 @@ https://localhost:9443 {
             response_timeout 5s
             insecure_skip_verify
 
-            # IMPORTANT: Add status_path for status tracking
-            status_path /graphql*
 
             # Health checks for primary (local IDE)
             health_check http://host.docker.internal:5021 {
@@ -119,8 +115,6 @@ https://localhost:9443 {
             response_timeout 5s
             insecure_skip_verify
 
-            # IMPORTANT: Add status_path for status tracking
-            status_path /gateway/*
 
             # Health checks for primary (local IDE)
             health_check http://host.docker.internal:5021 {
@@ -158,8 +152,6 @@ https://localhost:9443 {
             response_timeout 5s
             insecure_skip_verify
 
-            # IMPORTANT: Add status_path for status tracking
-            status_path /student/*
 
             # Health checks for primary (local IDE)
             health_check http://host.docker.internal:5061 {
@@ -197,8 +189,6 @@ https://localhost:9443 {
             response_timeout 5s
             insecure_skip_verify
 
-            # IMPORTANT: Add status_path for status tracking
-            status_path /auth/*
 
             # Health checks for primary (local IDE)
             health_check http://host.docker.internal:5051 {
@@ -235,8 +225,6 @@ https://localhost:9443 {
             dial_timeout 2s
             response_timeout 5s
 
-            # IMPORTANT: Add status_path for status tracking
-            status_path /cms/*
 
             # Health check for Directus
             health_check http://directus:8055 {
@@ -260,8 +248,6 @@ https://localhost:9443 {
             dial_timeout 2s
             response_timeout 5s
 
-            # IMPORTANT: Add status_path for status tracking
-            status_path /web-worker/*
 
             # Health check for primary (local IDE)
             health_check http://host.docker.internal:5045 {
@@ -299,8 +285,6 @@ https://localhost:9443 {
             dial_timeout 2s
             response_timeout 5s
 
-            # IMPORTANT: Add status_path for status tracking
-            status_path /dx/*
 
             # Health check for dashboard (Vite dev server)
             health_check http://host.docker.internal:5174 {
@@ -325,8 +309,6 @@ https://localhost:9443 {
             dial_timeout 2s
             response_timeout 5s
 
-            # IMPORTANT: Add status_path for status tracking
-            status_path /caddy-admin/*
 
             # Health check for Caddy Admin API
             health_check http://localhost:2019 {

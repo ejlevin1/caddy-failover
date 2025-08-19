@@ -23,20 +23,17 @@ func TestProxyRegistry(t *testing.T) {
 	proxy1 := &FailoverProxy{
 		Upstreams:  []string{"http://localhost:5051", "https://example.com"},
 		HandlePath: "/auth/*",
-		Path:       "/auth/*",
 	}
 
 	proxy2 := &FailoverProxy{
 		Upstreams:  []string{"http://localhost:5041", "https://example.com"},
 		HandlePath: "/admin/*",
-		Path:       "/admin/*",
 	}
 
 	// Test duplicate registration with same path (should not duplicate)
 	proxy3 := &FailoverProxy{
 		Upstreams:  []string{"http://localhost:5051", "https://example.com"},
 		HandlePath: "/auth/*",
-		Path:       "/auth/*",
 	}
 
 	// Register proxies
@@ -88,13 +85,11 @@ func TestProxyRegistryNoDuplicateUpstreams(t *testing.T) {
 	proxy1 := &FailoverProxy{
 		Upstreams:  []string{"http://localhost:5051", "https://example.com"},
 		HandlePath: "/api/*",
-		Path:       "/api/*",
 	}
 
 	proxy2 := &FailoverProxy{
 		Upstreams:  []string{"http://localhost:5051", "https://backup.com"},
 		HandlePath: "/api/*",
-		Path:       "/api/*",
 	}
 
 	// Register both proxies with same path
@@ -137,11 +132,10 @@ func TestProxyPathHandling(t *testing.T) {
 		expectedPath string
 	}{
 		{
-			name: "Path and HandlePath both set",
+			name: "HandlePath set",
 			proxy: &FailoverProxy{
 				Upstreams:  []string{"http://localhost:5051"},
 				HandlePath: "/auth/*",
-				Path:       "/auth/*",
 			},
 			expectedPath: "/auth/*",
 		},
@@ -150,7 +144,6 @@ func TestProxyPathHandling(t *testing.T) {
 			proxy: &FailoverProxy{
 				Upstreams:  []string{"http://localhost:5051"},
 				HandlePath: "/api/*",
-				Path:       "",
 			},
 			expectedPath: "/api/*",
 		},
@@ -158,8 +151,7 @@ func TestProxyPathHandling(t *testing.T) {
 			name: "Only Path set",
 			proxy: &FailoverProxy{
 				Upstreams:  []string{"http://localhost:5051"},
-				HandlePath: "",
-				Path:       "/admin/*",
+				HandlePath: "/admin/*",
 			},
 			expectedPath: "/admin/*",
 		},
@@ -173,10 +165,7 @@ func TestProxyPathHandling(t *testing.T) {
 			}
 
 			// Determine registration path (mimics Provision logic)
-			registrationPath := tt.proxy.Path
-			if registrationPath == "" && tt.proxy.HandlePath != "" {
-				registrationPath = tt.proxy.HandlePath
-			}
+			registrationPath := tt.proxy.HandlePath
 
 			if registrationPath != "" {
 				registry.Register(registrationPath, tt.proxy)
@@ -389,7 +378,6 @@ func TestFailoverStatusHandler(t *testing.T) {
 	proxy1 := &FailoverProxy{
 		Upstreams:  []string{"http://localhost:5051"},
 		HandlePath: "/api/*",
-		Path:       "/api/*",
 	}
 	registry.Register("/api/*", proxy1)
 

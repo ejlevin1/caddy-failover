@@ -279,10 +279,6 @@ func TestWithPath(t *testing.T) {
 	// Apply the option
 	WithPath(testPath)(proxy)
 
-	if proxy.Path != testPath {
-		t.Errorf("Expected Path %q, got %q", testPath, proxy.Path)
-	}
-
 	if proxy.HandlePath != testPath {
 		t.Errorf("Expected HandlePath %q, got %q", testPath, proxy.HandlePath)
 	}

@@ -48,7 +48,6 @@ cat > test-status.Caddyfile << 'EOF'
     handle /auth/* {
         failover_proxy http://localhost:5051 https://httpbin.org/anything {
             fail_duration 3s
-            status_path /auth/*
 
             health_check http://localhost:5051 {
                 path /health
@@ -63,7 +62,6 @@ cat > test-status.Caddyfile << 'EOF'
     handle /admin/* {
         failover_proxy http://localhost:5041 http://localhost:5042 https://httpbin.org/anything {
             fail_duration 3s
-            status_path /admin/*
 
             health_check http://localhost:5041 {
                 path /health
@@ -74,7 +72,7 @@ cat > test-status.Caddyfile << 'EOF'
         }
     }
 
-    # Test path 3: /api/* (without explicit status_path)
+    # Test path 3: /api/*
     handle /api/* {
         failover_proxy http://localhost:5021 https://httpbin.org/anything {
             fail_duration 3s
@@ -92,7 +90,6 @@ cat > test-status.Caddyfile << 'EOF'
     handle /gateway/* {
         failover_proxy http://localhost:5021 https://httpbin.org/anything {
             fail_duration 3s
-            status_path /gateway/*
 
             health_check http://localhost:5021 {
                 path /gateway/health/ready

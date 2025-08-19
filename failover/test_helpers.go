@@ -139,7 +139,6 @@ func WithHealthCheck(upstream string, hc *HealthCheck) ProxyOption {
 // WithPath sets the path for the proxy
 func WithPath(path string) ProxyOption {
 	return func(fp *FailoverProxy) {
-		fp.Path = path
 		fp.HandlePath = path
 	}
 }
@@ -192,7 +191,6 @@ func CreateTestRegistry(paths ...string) *ProxyRegistry {
 		proxy := &FailoverProxy{
 			Upstreams:  []string{fmt.Sprintf("http://localhost:%d", 5000+i)},
 			HandlePath: path,
-			Path:       path,
 		}
 		registry.Register(path, proxy)
 	}

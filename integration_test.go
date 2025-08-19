@@ -116,9 +116,8 @@ func TestFailoverStatusEndpointIntegration(t *testing.T) {
 				failover_status
 			}
 
-			handle {
+			handle /api {
 				failover_proxy %s %s {
-					status_path /api
 					fail_duration 1s
 					health_check %s {
 						path /health

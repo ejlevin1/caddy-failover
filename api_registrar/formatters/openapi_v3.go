@@ -95,10 +95,18 @@ type Components struct {
 }
 
 // OpenAPIv3Formatter formats API specs as OpenAPI 3.0
-type OpenAPIv3Formatter struct{}
+type OpenAPIv3Formatter struct {
+	ServerURL string // Optional server URL override
+}
 
 // Format converts the API specs to OpenAPI 3.0 format
 func (f *OpenAPIv3Formatter) Format(specs map[string]*CaddyModuleApiSpec, configs map[string]*ApiConfig) (interface{}, error) {
+	// Determine server URL
+	serverURL := f.ServerURL
+	if serverURL == "" {
+		serverURL = "http://localhost"
+	}
+
 	openapi := &OpenAPISpec{
 		OpenAPI: "3.0.3",
 		Info: Info{
@@ -108,7 +116,7 @@ func (f *OpenAPIv3Formatter) Format(specs map[string]*CaddyModuleApiSpec, config
 		},
 		Servers: []Server{
 			{
-				URL:         "http://localhost",
+				URL:         serverURL,
 				Description: "Default server",
 			},
 		},

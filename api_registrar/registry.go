@@ -1,6 +1,7 @@
 package api_registrar
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/ejlevin1/caddy-failover/api_registrar/formatters"
@@ -10,13 +11,15 @@ import (
 type ApiRegistry struct {
 	mu      sync.RWMutex
 	specs   map[string]*formatters.CaddyModuleApiSpec // ID -> API specification
-	configs map[string]*formatters.ApiConfig          // ID -> API configuration
+	configs map[string]*formatters.ApiConfig          // ID -> API configuration (deprecated - use paths)
+	paths   map[string]*ApiConfig                     // ID -> API path configuration (new)
 }
 
 // Global registry instance
 var registry = &ApiRegistry{
 	specs:   make(map[string]*formatters.CaddyModuleApiSpec),
 	configs: make(map[string]*formatters.ApiConfig),
+	paths:   make(map[string]*ApiConfig),
 }
 
 // RegisterApiSpec registers an API specification
@@ -101,4 +104,54 @@ func IsConfigured(id string) bool {
 
 	config, exists := registry.configs[id]
 	return exists && config != nil && config.Enabled
+}
+
+// IsApiSpecRegistered checks if an API spec has been registered
+func IsApiSpecRegistered(id string) bool {
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+
+	_, exists := registry.specs[id]
+	return exists
+}
+
+// RegisterApiPath registers the path where an API is mounted
+// Returns an error if the API is already registered at a different path
+func RegisterApiPath(id string, config *ApiConfig) error {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+
+	if existing, exists := registry.paths[id]; exists {
+		if existing.Path != config.Path {
+			return fmt.Errorf("API '%s' is already registered at path '%s', cannot register at '%s'",
+				id, existing.Path, config.Path)
+		}
+		// Same path, update config
+		registry.paths[id] = config
+		return nil
+	}
+
+	registry.paths[id] = config
+	return nil
+}
+
+// GetRegisteredApiPaths returns all registered API paths
+func GetRegisteredApiPaths() map[string]*ApiConfig {
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+
+	// Return a copy to prevent concurrent modification
+	paths := make(map[string]*ApiConfig)
+	for k, v := range registry.paths {
+		paths[k] = v
+	}
+	return paths
+}
+
+// ResetPaths clears the path registry (useful for testing)
+func ResetPaths() {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+
+	registry.paths = make(map[string]*ApiConfig)
 }

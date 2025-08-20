@@ -1,3 +1,10 @@
+# [2.1.0](https://github.com/ejlevin1/caddy-failover/compare/v2.0.1...v2.1.0) (2025-08-20)
+
+
+### Features
+
+* add path directive support and enhanced error messages for snippets ([3219c91](https://github.com/ejlevin1/caddy-failover/commit/3219c915a3091d33e9728dfb040a898bea301064))
+
 ## [2.0.1](https://github.com/ejlevin1/caddy-failover/compare/v2.0.0...v2.0.1) (2025-08-19)
 
 

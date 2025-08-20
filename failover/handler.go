@@ -237,8 +237,11 @@ type FailoverProxy struct {
 	// ResponseTimeout is the timeout for receiving response (default 5s)
 	ResponseTimeout caddy.Duration `json:"response_timeout,omitempty"`
 
-	// HandlePath is the handle block path (e.g., /auth/*) - automatically detected
+	// HandlePath is the handle block path (e.g., /auth/*) - automatically detected or explicitly set
 	HandlePath string `json:"handle_path,omitempty"`
+
+	// autoDetectedPath stores the auto-detected path for warning purposes (not serialized)
+	autoDetectedPath string
 
 	logger         *zap.Logger
 	replacer       *caddy.Replacer
@@ -272,6 +275,13 @@ func (f *FailoverProxy) Provision(ctx caddy.Context) error {
 	f.responseTime = make(map[string]int64)
 	f.activeUpstream = nil
 	f.shutdown = make(chan struct{})
+
+	// Log warning if path was explicitly set when auto-detection was available
+	if f.autoDetectedPath != "" && f.HandlePath != f.autoDetectedPath {
+		f.logger.Warn("path explicitly set in failover_proxy, overriding auto-detected handle block path",
+			zap.String("explicit_path", f.HandlePath),
+			zap.String("auto_detected_path", f.autoDetectedPath))
+	}
 
 	// Register with global registry using the handle path
 	registrationPath := f.HandlePath
@@ -964,14 +974,15 @@ func parseFailoverProxy(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, er
 	}
 
 	// Try to extract the path from the current context
-	// This is important for status tracking - without a path, the proxy won't be registered
+	// This is important for status tracking - without a path, the proxy won't be registered properly
+	autoDetectedPath := ""
 	if h.State != nil {
 		if segments := h.State["matcher_segments"]; segments != nil {
 			if segs, ok := segments.([]caddyhttp.MatcherSet); ok && len(segs) > 0 {
 				for _, matcherSet := range segs {
 					for _, matcher := range matcherSet {
 						if pathMatcher, ok := matcher.(caddyhttp.MatchPath); ok && len(pathMatcher) > 0 {
-							f.HandlePath = string(pathMatcher[0])
+							autoDetectedPath = string(pathMatcher[0])
 							break
 						}
 					}
@@ -980,7 +991,18 @@ func parseFailoverProxy(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, er
 		}
 	}
 
+	// Check if we're in a snippet
+	snippetName := ""
+	if h.State != nil {
+		if name, ok := h.State["snippet_name"]; ok {
+			if nameStr, ok := name.(string); ok {
+				snippetName = nameStr
+			}
+		}
+	}
+
 	// Parse directive arguments (upstream URLs)
+	explicitPath := ""
 	for h.Next() {
 		f.Upstreams = h.RemainingArgs()
 		if len(f.Upstreams) == 0 {
@@ -990,6 +1012,16 @@ func parseFailoverProxy(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, er
 		// Parse block for additional options
 		for h.NextBlock(0) {
 			switch h.Val() {
+			case "path":
+				// Optional path specification (overrides auto-detection)
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				explicitPath = h.Val()
+				if h.NextArg() {
+					return nil, h.ArgErr()
+				}
+
 			case "fail_duration":
 				if !h.NextArg() {
 					return nil, h.ArgErr()
@@ -1107,6 +1139,31 @@ func parseFailoverProxy(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, er
 			}
 		}
 	}
+
+	// Determine which path to use based on the fallback logic
+	// Get file and line information for better error reporting
+	file := h.File()
+	line := h.Line()
+
+	// Apply fallback logic for path determination
+	if explicitPath != "" && autoDetectedPath != "" {
+		// Both explicit and auto-detected paths available - use explicit but store auto for warning
+		f.HandlePath = explicitPath
+		f.autoDetectedPath = autoDetectedPath // Store for warning during provision
+	} else if explicitPath != "" {
+		// Only explicit path available - use it
+		f.HandlePath = explicitPath
+	} else if autoDetectedPath != "" {
+		// Only auto-detected path available - use it
+		f.HandlePath = autoDetectedPath
+	} else if snippetName != "" {
+		// In a snippet without a path - show helpful error
+		location := fmt.Sprintf("%s:%d (in snippet '%s')", file, line, snippetName)
+		return nil, h.Errf("failover_proxy at %s requires a 'path' directive when used in snippets. "+
+			"Path cannot be auto-detected from handle blocks in snippets. "+
+			"Add 'path /your/api/path' (e.g., 'path /admin/*') to fix this.", location)
+	}
+	// If no path and not in snippet, that's okay - it will generate an auto-hash path
 
 	return f, nil
 }

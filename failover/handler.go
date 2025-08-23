@@ -62,12 +62,21 @@ func (r *ProxyRegistry) Register(path string, proxy *FailoverProxy) {
 
 	// Check if this path already exists
 	if entry, exists := r.proxies[path]; exists {
-		// Merge upstreams if not already present
+		// Replace the old proxy with the new one to handle re-provisioning
+		// This happens when routes are dynamically updated
+		oldProxy := entry.Proxy
+		entry.Proxy = proxy
+		entry.Upstreams = make(map[string]bool)
 		for _, upstream := range proxy.Upstreams {
-			if !entry.Upstreams[upstream] {
-				// This is a new upstream for this path, but we'll use the first proxy's configuration
-				// to avoid duplicates. This ensures we don't duplicate the same upstream
-				entry.Upstreams[upstream] = true
+			entry.Upstreams[upstream] = true
+		}
+
+		// Log the replacement for debugging
+		if oldProxy != proxy {
+			if proxy.logger != nil {
+				proxy.logger.Debug("replaced existing proxy registration",
+					zap.String("path", path),
+					zap.Int("upstream_count", len(proxy.Upstreams)))
 			}
 		}
 	} else {
@@ -82,6 +91,13 @@ func (r *ProxyRegistry) Register(path string, proxy *FailoverProxy) {
 		}
 		r.proxies[path] = entry
 		r.order = append(r.order, path)
+
+		// Log the new registration
+		if proxy.logger != nil {
+			proxy.logger.Debug("registered new proxy",
+				zap.String("path", path),
+				zap.Int("upstream_count", len(proxy.Upstreams)))
+		}
 	}
 }
 
@@ -105,16 +121,53 @@ func (r *ProxyRegistry) Unregister(path string, proxy *FailoverProxy) {
 	}
 }
 
+// CleanupStale removes any nil or invalid entries from the registry
+func (r *ProxyRegistry) CleanupStale() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Track paths to remove
+	var toRemove []string
+
+	for path, entry := range r.proxies {
+		if entry == nil || entry.Proxy == nil {
+			toRemove = append(toRemove, path)
+		}
+	}
+
+	// Remove stale entries
+	for _, path := range toRemove {
+		delete(r.proxies, path)
+		// Remove from order slice
+		for i, p := range r.order {
+			if p == path {
+				r.order = append(r.order[:i], r.order[i+1:]...)
+				break
+			}
+		}
+	}
+}
+
 // GetStatus returns the status of all registered proxies
 func (r *ProxyRegistry) GetStatus() []PathStatus {
+	// Clean up any stale entries first
+	r.CleanupStale()
+
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var status []PathStatus
+	// Ensure we always return a non-nil slice
+	status := []PathStatus{}
+
 	// Use order to maintain consistent ordering
 	for _, path := range r.order {
 		entry, exists := r.proxies[path]
 		if !exists {
+			continue
+		}
+
+		// Validate the proxy is still valid (not nil)
+		if entry == nil || entry.Proxy == nil {
 			continue
 		}
 
@@ -1217,9 +1270,21 @@ func (h FailoverStatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request,
 		return nil
 	}
 
+	// Ensure null safety - always return a valid JSON response
 	status := proxyRegistry.GetStatus()
+	if status == nil {
+		// Return empty array rather than null
+		status = []PathStatus{}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	if err := json.NewEncoder(w).Encode(status); err != nil {
+		// Log error and return error response
+		caddy.Log().Error("failed to encode failover status response",
+			zap.Error(err))
+		http.Error(w, `{"error":"Failed to encode status response"}`, http.StatusInternalServerError)
+		return nil
+	}
 	return nil
 }
 

@@ -1,3 +1,10 @@
+## [2.1.1](https://github.com/ejlevin1/caddy-failover/compare/v2.1.0...v2.1.1) (2025-08-23)
+
+
+### Bug Fixes
+
+* handle dynamic route changes and prevent null status responses ([853f9b2](https://github.com/ejlevin1/caddy-failover/commit/853f9b299cee2c5ba06dc4362b030f8e5b9dfae8))
+
 # [2.1.0](https://github.com/ejlevin1/caddy-failover/compare/v2.0.1...v2.1.0) (2025-08-20)
 
 

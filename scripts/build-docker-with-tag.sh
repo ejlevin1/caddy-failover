@@ -56,7 +56,7 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ] || [ -z "$1" ]; then
     echo ""
     echo "Variants:"
     echo "  standard (default) - Caddy with failover plugin only"
-    echo "  loaded            - Caddy with failover, admin-ui, and docker-proxy plugins"
+    echo "  loaded            - Caddy with failover and docker-proxy plugins"
     exit 1
 fi
 

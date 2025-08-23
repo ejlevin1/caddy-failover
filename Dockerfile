@@ -19,7 +19,7 @@ RUN xcaddy build \
 
 # ============================================================================
 # Stage: builder-loaded
-# Build Caddy with failover plugin plus additional plugins
+# Build Caddy with failover plugin plus Docker proxy plugin
 # ============================================================================
 FROM caddy:2-builder AS builder-loaded
 
@@ -27,10 +27,9 @@ FROM caddy:2-builder AS builder-loaded
 WORKDIR /src
 COPY . .
 
-# Build Caddy with failover plugin plus additional plugins
+# Build Caddy with failover plugin plus Docker proxy plugin for container orchestration
 RUN xcaddy build \
     --with github.com/ejlevin1/caddy-failover=. \
-    --with github.com/gsmlg-dev/caddy-admin-ui \
     --with github.com/lucaslorentz/caddy-docker-proxy/v2
 
 # ============================================================================
@@ -70,11 +69,11 @@ RUN VERSION="${VERSION}" && \
     BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo 'unknown')" && \
     CADDY_VERSION="$(/tmp/caddy version | head -1)" && \
     echo "{\"version\":\"$VERSION\",\"git_commit\":\"$GIT_COMMIT\",\"git_tag\":\"$GIT_TAG\",\"git_branch\":\"$GIT_BRANCH\",\"build_date\":\"$BUILD_DATE\",\"caddy_version\":\"$CADDY_VERSION\",\"plugin\":\"github.com/ejlevin1/caddy-failover\"}" | jq . > /build-info-standard.json && \
-    echo "{\"version\":\"$VERSION\",\"git_commit\":\"$GIT_COMMIT\",\"git_tag\":\"$GIT_TAG\",\"git_branch\":\"$GIT_BRANCH\",\"build_date\":\"$BUILD_DATE\",\"caddy_version\":\"$CADDY_VERSION\",\"plugins\":[\"github.com/ejlevin1/caddy-failover\",\"github.com/gsmlg-dev/caddy-admin-ui\",\"github.com/lucaslorentz/caddy-docker-proxy/v2\"]}" | jq . > /build-info-loaded.json
+    echo "{\"version\":\"$VERSION\",\"git_commit\":\"$GIT_COMMIT\",\"git_tag\":\"$GIT_TAG\",\"git_branch\":\"$GIT_BRANCH\",\"build_date\":\"$BUILD_DATE\",\"caddy_version\":\"$CADDY_VERSION\",\"plugins\":[\"github.com/ejlevin1/caddy-failover\",\"github.com/lucaslorentz/caddy-docker-proxy/v2\"]}" | jq . > /build-info-loaded.json
 
 # ============================================================================
 # Stage: loaded
-# Final stage for loaded image (with additional plugins)
+# Final stage for loaded image (with Docker proxy plugin)
 # ============================================================================
 FROM caddy:2-alpine AS loaded
 
@@ -90,8 +89,8 @@ COPY LICENSE /usr/share/licenses/caddy-failover/LICENSE
 
 # Add labels for OCI image spec
 LABEL org.opencontainers.image.source="https://github.com/ejlevin1/caddy-failover" \
-      org.opencontainers.image.title="Caddy with Failover Plugin and Additional Modules" \
-      org.opencontainers.image.description="Caddy web server with failover, admin UI, and Docker proxy plugins" \
+      org.opencontainers.image.title="Caddy with Failover and Docker Proxy Plugins" \
+      org.opencontainers.image.description="Caddy web server with failover and Docker proxy plugins for container orchestration" \
       org.opencontainers.image.licenses="MIT"
 
 # Expose ports

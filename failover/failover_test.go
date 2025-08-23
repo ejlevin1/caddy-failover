@@ -69,13 +69,15 @@ func TestProxyRegistry(t *testing.T) {
 	}
 
 	// Test unregistration
-	registry.Unregister("/auth/*", proxy1)
+	// Note: proxy3 replaced proxy1 at "/auth/*", so we need to unregister proxy3
+	registry.Unregister("/auth/*", proxy3)
+	// Should have only /admin/* left
 	if len(registry.proxies) != 1 {
 		t.Errorf("Expected 1 entry after unregister, got %d", len(registry.proxies))
 	}
 }
 
-func TestProxyRegistryNoDuplicateUpstreams(t *testing.T) {
+func TestProxyRegistryReplacementBehavior(t *testing.T) {
 	registry := &ProxyRegistry{
 		proxies: make(map[string]*ProxyEntry),
 		order:   make([]string, 0),
@@ -101,21 +103,25 @@ func TestProxyRegistryNoDuplicateUpstreams(t *testing.T) {
 		t.Errorf("Expected 1 entry in registry, got %d", len(registry.proxies))
 	}
 
-	// Check that upstreams are tracked properly
+	// Check that the second proxy replaced the first
 	entry := registry.proxies["/api/*"]
 	if entry == nil {
 		t.Fatal("Entry not found for /api/*")
 	}
 
-	// Should have 3 unique upstreams total
+	// Should have proxy2's upstreams (replacement behavior)
+	if entry.Proxy != proxy2 {
+		t.Errorf("Expected proxy2 to replace proxy1")
+	}
+
+	// Should have only proxy2's upstreams
 	expectedUpstreams := map[string]bool{
 		"http://localhost:5051": true,
-		"https://example.com":   true,
 		"https://backup.com":    true,
 	}
 
 	if len(entry.Upstreams) != len(expectedUpstreams) {
-		t.Errorf("Expected %d unique upstreams, got %d", len(expectedUpstreams), len(entry.Upstreams))
+		t.Errorf("Expected %d upstreams, got %d", len(expectedUpstreams), len(entry.Upstreams))
 	}
 
 	for upstream := range expectedUpstreams {
